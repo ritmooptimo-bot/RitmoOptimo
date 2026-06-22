@@ -1,4 +1,4 @@
-name: Build & Release APK
+name: Build & Deploy APK
 
 on:
   push:
@@ -23,7 +23,6 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.4'
           channel: stable
           cache: true
 
@@ -33,38 +32,25 @@ jobs:
       - name: Build APK
         run: flutter build apk --release --no-shrink
 
-      # Nombre fijo → URL de descarga siempre la misma
       - name: Rename APK
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk \
              build/app/outputs/flutter-apk/ritmooptimo-latest.apk
 
-      - name: Upload artifact
+      - name: Upload artifact (backup)
         uses: actions/upload-artifact@v4
         with:
           name: ritmooptimo-apk
           path: build/app/outputs/flutter-apk/ritmooptimo-latest.apk
           retention-days: 90
 
-      # Borra el release "latest" anterior y crea uno nuevo
-      # URL siempre fija: /releases/download/latest/ritmooptimo-latest.apk
-      - name: Delete existing latest release
-        continue-on-error: true
-        run: gh release delete latest --yes --cleanup-tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create latest release
-        run: |
-          VERSION=$(grep 'version:' pubspec.yaml | head -1 | awk '{print $2}' | cut -d'+' -f1)
-          DATE=$(date +%Y-%m-%d)
-          gh release create latest \
-            --title "Ritmo Óptimo v${VERSION} (${DATE})" \
-            --notes "## 📱 Descarga directa para Android
-
-          **Activa 'Instalar desde fuentes desconocidas'** en Ajustes → Seguridad antes de instalar.
-
-          Compilado: ${DATE} · Commit: \`${{ github.sha }}\`" \
-            build/app/outputs/flutter-apk/ritmooptimo-latest.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Deploy APK to Hostinger via SSH
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 82.198.229.25
+          port: 65002
+          username: u323441816
+          password: ${{ secrets.HOSTINGER_SSH_PASS }}
+          source: build/app/outputs/flutter-apk/ritmooptimo-latest.apk
+          target: /home/u323441816/domains/ritmooptimo.tech/public_html/apk/
+          strip_components: 4
