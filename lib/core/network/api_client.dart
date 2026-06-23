@@ -2,7 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-const _kTokenKey = 'auth_token';
+const _kTokenKey = 'ro_access_token'; // misma clave que AppAuthClient
 const _apiBase   = 'https://ritmooptimo.tech/api/training-plan';
 
 // ── Auth Interceptor ─────────────────────────────────────────────
