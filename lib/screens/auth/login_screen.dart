@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/skin_provider.dart';
 
@@ -21,6 +22,68 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     _emailCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
+  }
+
+  void _showActivationDialog(BuildContext context, dynamic skin) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: skin.backgroundCard,
+        title: Text('Código de activación', style: TextStyle(color: skin.textPrimary, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Pega aquí el enlace de activación que te envió tu entrenador:',
+              style: TextStyle(color: skin.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              style: TextStyle(color: skin.textPrimary, fontSize: 13),
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: 'https://ritmooptimo.tech/app/activar?token=...',
+                hintStyle: TextStyle(color: skin.textMuted, fontSize: 11),
+                filled: true,
+                fillColor: skin.background,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancelar', style: TextStyle(color: skin.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final raw = ctrl.text.trim();
+              final token = _extractToken(raw);
+              if (token.isEmpty) return;
+              Navigator.of(context).pop();
+              context.go('/pair?token=$token');
+            },
+            child: const Text('Activar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _extractToken(String input) {
+    try {
+      final uri = Uri.tryParse(input);
+      if (uri != null) {
+        final t = uri.queryParameters['token'];
+        if (t != null && t.isNotEmpty) return t;
+      }
+    } catch (_) {}
+    // Si es directamente el token (64 chars hex)
+    if (RegExp(r'^[0-9a-f]{64}$').hasMatch(input)) return input;
+    return '';
   }
 
   Future<void> _login() async {
@@ -149,7 +212,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 20),
+
+              // Enlace de activación manual (fallback si el deep link no funciona)
+              Center(
+                child: TextButton(
+                  onPressed: () => _showActivationDialog(context, skin),
+                  child: Text(
+                    '¿Primer acceso? Introduce tu código de activación',
+                    style: TextStyle(color: skin.textMuted, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
             ],
           ),
         ),

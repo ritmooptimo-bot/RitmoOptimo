@@ -35,13 +35,13 @@ jobs:
       - name: Rename APK
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk \
-             build/app/outputs/flutter-apk/ritmooptimo-latest.apk
+             build/app/outputs/flutter-apk/ritmooptimo-v3.0.apk
 
       - name: Upload artifact (backup)
         uses: actions/upload-artifact@v4
         with:
           name: ritmooptimo-apk
-          path: build/app/outputs/flutter-apk/ritmooptimo-latest.apk
+          path: build/app/outputs/flutter-apk/ritmooptimo-v3.0.apk
           retention-days: 90
 
       - name: Deploy APK to Hostinger via SSH
@@ -51,6 +51,6 @@ jobs:
           port: 65002
           username: u323441816
           password: ${{ secrets.HOSTINGER_SSH_PASS }}
-          source: build/app/outputs/flutter-apk/ritmooptimo-latest.apk
-          target: /home/u323441816/domains/ritmooptimo.tech/public_html/apk/
+          source: build/app/outputs/flutter-apk/ritmooptimo-v3.0.apk
+          target: /home/u323441816/domains/ritmooptimo.tech/apk/
           strip_components: 4

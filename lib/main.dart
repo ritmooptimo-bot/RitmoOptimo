@@ -43,9 +43,11 @@ class _RitmoOptimoAppState extends ConsumerState<RitmoOptimoApp> {
   void _initDeepLinks() {
     _appLinks = AppLinks();
 
-    // Deep link que abrió la app desde estado cerrado
-    _appLinks.getInitialLink().then((uri) {
-      if (uri != null) _handleDeepLink(uri);
+    // Esperar al primer frame para que GoRouter esté montado
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _appLinks.getInitialLink().then((uri) {
+        if (uri != null) _handleDeepLink(uri);
+      });
     });
 
     // Deep links mientras la app está en segundo plano o activa
