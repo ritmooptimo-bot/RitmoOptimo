@@ -19,12 +19,13 @@ class BleService {
   bool    get isConnected         => _device?.isConnected ?? false;
   String? get connectedDeviceName => _device?.platformName;
 
-  // Scan filtrado por Heart Rate Service UUID (0x180D) durante 10 s.
-  // Devuelve el stream de resultados para que la UI los muestre en vivo.
+  // Scan filtrado por Heart Rate Service UUID (0x180D) durante 20 s.
+  // 20s necesarios para bandas Garmin (HRM-Pro Plus tarda en anunciar BLE
+  // cuando también transmite ANT+ a un reloj emparejado).
   Stream<List<ScanResult>> scan() {
     FlutterBluePlus.startScan(
       withServices: [Guid(_hrServiceUuid)],
-      timeout: const Duration(seconds: 10),
+      timeout: const Duration(seconds: 20),
     );
     return FlutterBluePlus.scanResults;
   }
@@ -53,11 +54,14 @@ class BleService {
       if (svc.uuid.str.toLowerCase() == _hrServiceUuid) {
         for (final char in svc.characteristics) {
           if (char.uuid.str.toLowerCase() == _hrMeasurementUuid) {
-            await char.setNotifyValue(true);
-            // onValueReceived solo emite notificaciones nuevas del dispositivo
+            // Suscribirse antes de escuchar — crítico para Garmin HRM-Pro Plus
             _hrSub = char.onValueReceived.listen((data) {
               if (data.isNotEmpty) _hrController.add(_parseHR(data));
             });
+            await char.setNotifyValue(true);
+            // Lectura inicial para "despertar" notificaciones en bandas Garmin
+            // que no emiten la primera notificación hasta recibir una lectura explícita.
+            try { await char.read(); } catch (_) {}
             return;
           }
         }

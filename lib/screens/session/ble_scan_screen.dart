@@ -23,8 +23,11 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
   List<ScanResult> _results    = [];
   bool             _scanning   = false;
   bool             _connecting = false;
+  bool             _wideMode   = false; // true = busca todos los BLE, no solo HR
   String?          _errorMsg;
   StreamSubscription<List<ScanResult>>? _sub;
+
+  static const _scanSeconds = 20; // sincronizado con BleService.scan()
 
   @override
   void initState() {
@@ -39,8 +42,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
     super.dispose();
   }
 
-  Future<void> _startScan() async {
-    // Verificar que el Bluetooth esté activado
+  Future<void> _startScan({bool wide = false}) async {
     final adapterState = await FlutterBluePlus.adapterState.first;
     if (adapterState != BluetoothAdapterState.on) {
       setState(() => _errorMsg = 'Activa el Bluetooth para buscar sensores.');
@@ -48,18 +50,29 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
     }
 
     setState(() {
-      _scanning = true;
-      _results  = [];
-      _errorMsg = null;
+      _scanning  = true;
+      _wideMode  = wide;
+      _results   = [];
+      _errorMsg  = null;
     });
 
+    _sub?.cancel();
     final ble = ref.read(bleServiceProvider);
-    _sub = ble.scan().listen((results) {
-      setState(() => _results = results);
-    });
 
-    // El scan para automáticamente tras 10 s (timeout en BleService.scan)
-    Future.delayed(const Duration(seconds: 10), () {
+    if (wide) {
+      // Modo amplio: todos los dispositivos BLE, el usuario elige cuál es su banda
+      FlutterBluePlus.startScan(timeout: const Duration(seconds: _scanSeconds));
+      _sub = FlutterBluePlus.scanResults.listen(
+        (results) => setState(() => _results = results),
+      );
+    } else {
+      _sub = ble.scan().listen(
+        (results) => setState(() => _results = results),
+      );
+    }
+
+    // Sincronizado con el timeout del scan
+    Future.delayed(const Duration(seconds: _scanSeconds), () {
       if (mounted) setState(() => _scanning = false);
     });
   }
@@ -74,7 +87,7 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
     } catch (e) {
       setState(() {
         _connecting = false;
-        _errorMsg   = 'No se pudo conectar. Comprueba que el sensor esté encendido.';
+        _errorMsg   = 'No se pudo conectar. Comprueba que el sensor esté encendido y en rango.';
       });
     }
   }
@@ -105,8 +118,10 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
                 _ScanStatusBar(
                   scanning: _scanning,
                   resultsCount: _results.length,
+                  wideMode: _wideMode,
                   skin: skin,
-                  onRetry: _startScan,
+                  onRetry: () => _startScan(),
+                  onWide:  () => _startScan(wide: true),
                 ),
 
                 // ── Error ────────────────────────────────────
@@ -124,7 +139,12 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
                 // ── Lista de dispositivos ────────────────────
                 Expanded(
                   child: _results.isEmpty
-                      ? _EmptyView(scanning: _scanning, skin: skin)
+                      ? _EmptyView(
+                          scanning: _scanning,
+                          wideMode: _wideMode,
+                          skin: skin,
+                          onWide: () => _startScan(wide: true),
+                        )
                       : ListView.separated(
                           padding: const EdgeInsets.all(16),
                           itemCount: _results.length,
@@ -180,13 +200,17 @@ class _ConnectingView extends StatelessWidget {
 class _ScanStatusBar extends StatelessWidget {
   final bool scanning;
   final int resultsCount;
+  final bool wideMode;
   final dynamic skin;
   final VoidCallback onRetry;
+  final VoidCallback onWide;
   const _ScanStatusBar({
     required this.scanning,
     required this.resultsCount,
+    required this.wideMode,
     required this.skin,
     required this.onRetry,
+    required this.onWide,
   });
 
   @override
@@ -208,19 +232,28 @@ class _ScanStatusBar extends StatelessWidget {
             Expanded(
               child: Text(
                 scanning
-                    ? 'Buscando sensores de frecuencia cardíaca...'
+                    ? wideMode
+                        ? 'Buscando todos los dispositivos BLE...'
+                        : 'Buscando sensores de frecuencia cardíaca...'
                     : resultsCount > 0
                         ? '$resultsCount sensor${resultsCount > 1 ? 'es' : ''} encontrado${resultsCount > 1 ? 's' : ''}'
-                        : 'Búsqueda finalizada — ningún sensor encontrado',
+                        : 'Ningún sensor encontrado',
                 style: TextStyle(color: skin.textMuted, fontSize: 12),
               ),
             ),
-            if (!scanning)
+            if (!scanning) ...[
               TextButton(
                 onPressed: onRetry,
                 child: Text('Repetir',
                     style: TextStyle(color: skin.accent, fontSize: 12)),
               ),
+              if (!wideMode)
+                TextButton(
+                  onPressed: onWide,
+                  child: Text('Ver todos',
+                      style: TextStyle(color: skin.textMuted, fontSize: 12)),
+                ),
+            ],
           ],
         ),
       );
@@ -228,25 +261,54 @@ class _ScanStatusBar extends StatelessWidget {
 
 class _EmptyView extends StatelessWidget {
   final bool scanning;
+  final bool wideMode;
   final dynamic skin;
-  const _EmptyView({required this.scanning, required this.skin});
+  final VoidCallback onWide;
+  const _EmptyView({
+    required this.scanning,
+    required this.wideMode,
+    required this.skin,
+    required this.onWide,
+  });
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.bluetooth_disabled,
-                size: 64, color: skin.textMuted.withOpacity(0.4)),
-            const SizedBox(height: 16),
-            Text(
-              scanning
-                  ? 'Buscando sensores...\nAsegúrate de que la banda esté encendida.'
-                  : 'No se encontraron sensores.\nComprueba que la banda esté encendida y en rango.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: skin.textMuted, fontSize: 14),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.bluetooth_disabled,
+                  size: 64, color: skin.textMuted.withOpacity(0.4)),
+              const SizedBox(height: 16),
+              Text(
+                scanning
+                    ? 'Buscando sensores...\nAsegúrate de que la banda esté puesta y mojada.'
+                    : 'No se encontraron sensores.\nComprueba que la banda esté encendida y en rango.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: skin.textMuted, fontSize: 14),
+              ),
+              if (!scanning && !wideMode) ...[
+                const SizedBox(height: 24),
+                Text(
+                  '¿Usas una banda Garmin?\nPrueba la búsqueda ampliada:',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: skin.textMuted, fontSize: 12),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: onWide,
+                  icon: const Icon(Icons.bluetooth_searching, size: 18),
+                  label: const Text('Buscar todos los dispositivos BLE'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: skin.accent,
+                    side: BorderSide(color: skin.accent.withOpacity(0.5)),
+                    textStyle: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       );
 }
