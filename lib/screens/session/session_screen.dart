@@ -346,10 +346,10 @@ class _BleCard extends StatelessWidget {
                   ),
                   if (connected)
                     Text(
-                      hr != null ? '$hr bpm' : 'Esperando dato...',
+                      hr != null ? '$hr bpm' : 'Ponte la banda en el pecho',
                       style: TextStyle(
                         color: hr != null ? skin.error : skin.textMuted,
-                        fontSize: 13,
+                        fontSize: hr != null ? 13 : 10,
                         fontWeight: hr != null ? FontWeight.w700 : FontWeight.normal,
                         fontFamily: hr != null ? skin.fontFamilyMono : null,
                       ),

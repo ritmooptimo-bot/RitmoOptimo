@@ -49,24 +49,30 @@ class BleService {
   }
 
   Future<void> _subscribeHR(BluetoothDevice device) async {
+    // Breve pausa: el HRM-Pro Plus necesita ~300 ms tras la conexión BLE
+    // para tener el GATT listo antes de discover services.
+    await Future.delayed(const Duration(milliseconds: 300));
+
     final services = await device.discoverServices();
     for (final svc in services) {
-      if (svc.uuid.str.toLowerCase() == _hrServiceUuid) {
-        for (final char in svc.characteristics) {
-          if (char.uuid.str.toLowerCase() == _hrMeasurementUuid) {
-            // Suscribirse antes de escuchar — crítico para Garmin HRM-Pro Plus
-            _hrSub = char.onValueReceived.listen((data) {
-              if (data.isNotEmpty) _hrController.add(_parseHR(data));
-            });
-            await char.setNotifyValue(true);
-            // Lectura inicial para "despertar" notificaciones en bandas Garmin
-            // que no emiten la primera notificación hasta recibir una lectura explícita.
-            try { await char.read(); } catch (_) {}
-            return;
-          }
-        }
+      // Búsqueda flexible: acepta UUID corto ("180d") o largo completo
+      if (!svc.uuid.str.toLowerCase().contains('180d')) continue;
+
+      for (final char in svc.characteristics) {
+        if (!char.uuid.str.toLowerCase().contains('2a37')) continue;
+
+        // lastValueStream emite todas las notificaciones BLE recibidas del dispositivo.
+        // Se omite el primer valor (caché vacía) con skip(1).
+        _hrSub = char.lastValueStream.skip(1).listen((data) {
+          if (data.isNotEmpty) _hrController.add(_parseHR(data));
+        });
+
+        await char.setNotifyValue(true);
+        return;
       }
     }
+    // Si llega aquí: el servicio HR no se encontró en el dispositivo conectado.
+    // No lanzamos excepción — la UI mostrará "Esperando dato..."
   }
 
   Future<void> disconnect() async {
