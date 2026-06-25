@@ -7,8 +7,9 @@ import '../../config/router.dart';
 
 // ── Session Complete Screen ──────────────────────────────────────
 // Atleta registra los datos reales al finalizar la sesión.
-// Llama a POST /sessions/:id/complete → dispara automáticamente
-// evaluateSessionAlerts() y actualiza CTL/ATL/TSB en el cron.
+// Los campos de duración, distancia y FC se pre-rellenan desde
+// los sensores BLE/GPS si estuvieron activos durante la sesión.
+// Llama a POST /sessions/:id/complete → dispara evaluateSessionAlerts().
 
 class SessionCompleteScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -23,15 +24,52 @@ class _SessionCompleteScreenState
     extends ConsumerState<SessionCompleteScreen> {
   final _durationCtrl = TextEditingController();
   final _distanceCtrl = TextEditingController();
-  double _rpe    = 5;
-  double _avgHR  = 0;
-  double _maxHR  = 0;
-  bool   _saving = false;
+  double _rpe         = 5;
+  double _avgHR       = 0;
+  double _maxHR       = 0;
+  bool   _saving      = false;
 
-  // Athlete feedback
-  double _energyLevel   = 3;
-  double _perceived     = 3;
-  String _notes         = '';
+  double _energyLevel = 3;
+  double _perceived   = 3;
+  String _notes       = '';
+
+  bool _sensorDataAvailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Rellenar desde sensores tras el primer frame
+    WidgetsBinding.instance.addPostFrameCallback((_) => _autoFill());
+  }
+
+  void _autoFill() {
+    final session = ref.read(activeSessionProvider);
+
+    // Duración desde timer
+    if (session.elapsedSeconds > 0) {
+      _durationCtrl.text =
+          (session.elapsedSeconds / 60).ceil().toString();
+    }
+
+    // Distancia desde GPS
+    if (session.totalDistanceM > 0) {
+      _distanceCtrl.text =
+          (session.totalDistanceM / 1000).toStringAsFixed(2);
+    }
+
+    // FC desde BLE
+    final hrAvg = session.hrAvg;
+    final hrMax = session.hrMax;
+    if (hrAvg != null && hrAvg > 0 || hrMax != null && hrMax > 0) {
+      setState(() {
+        _avgHR               = (hrAvg ?? 0).toDouble();
+        _maxHR               = (hrMax ?? 0).toDouble();
+        _sensorDataAvailable = true;
+      });
+    } else {
+      setState(() {});
+    }
+  }
 
   @override
   void dispose() {
@@ -48,20 +86,19 @@ class _SessionCompleteScreenState
         {
           'actualDurationMin': int.tryParse(_durationCtrl.text),
           'actualDistanceM': _distanceCtrl.text.isNotEmpty
-              ? (double.tryParse(_distanceCtrl.text)! * 1000).round()
+              ? ((double.tryParse(_distanceCtrl.text) ?? 0) * 1000).round()
               : null,
           'actualRpe': _rpe.round(),
           'actualHrAvgBpm': _avgHR > 0 ? _avgHR.round() : null,
           'actualHrMaxBpm': _maxHR > 0 ? _maxHR.round() : null,
           'athleteFeedback': {
-            'energy_level': _energyLevel.round(),
+            'energy_level':     _energyLevel.round(),
             'perceived_effort': _perceived.round(),
             'notes': _notes.isEmpty ? null : _notes,
           },
         },
       );
       if (mounted) {
-        // Refrescar dashboard y volver al inicio
         ref.read(dashboardProvider.notifier).load();
         context.go(AppRoutes.home);
       }
@@ -86,7 +123,8 @@ class _SessionCompleteScreenState
         backgroundColor: skin.backgroundSecondary,
         title: Text(
           '¿CÓMO FUE?',
-          style: TextStyle(color: skin.textPrimary, letterSpacing: 2, fontSize: 14),
+          style: TextStyle(
+              color: skin.textPrimary, letterSpacing: 2, fontSize: 14),
         ),
         automaticallyImplyLeading: false,
       ),
@@ -95,6 +133,12 @@ class _SessionCompleteScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Banner sensor data ──────────────────────────
+            if (_sensorDataAvailable)
+              _SensorBanner(skin: skin),
+
+            const SizedBox(height: 16),
+
             // ── Duración y Distancia ────────────────────────
             _SectionTitle('MÉTRICAS', skin),
             const SizedBox(height: 12),
@@ -124,53 +168,72 @@ class _SessionCompleteScreenState
             // ── RPE ─────────────────────────────────────────
             _SectionTitle('ESFUERZO PERCIBIDO (RPE)', skin),
             const SizedBox(height: 8),
-            _RpeSlider(skin: skin, value: _rpe,
+            _RpeSlider(
+                skin: skin,
+                value: _rpe,
                 onChanged: (v) => setState(() => _rpe = v)),
 
             const SizedBox(height: 24),
 
-            // ── HR ───────────────────────────────────────────
-            _SectionTitle('FRECUENCIA CARDÍACA', skin),
+            // ── FC ───────────────────────────────────────────
+            _SectionTitle(
+              _sensorDataAvailable
+                  ? 'FRECUENCIA CARDÍACA (desde sensor)'
+                  : 'FRECUENCIA CARDÍACA',
+              skin,
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Media', style: TextStyle(color: skin.textMuted, fontSize: 12)),
-                    Slider(
-                      value: _avgHR,
-                      min: 0, max: 220,
-                      divisions: 220,
-                      activeColor: skin.accent,
-                      inactiveColor: skin.border,
-                      label: _avgHR > 0 ? '${_avgHR.round()} bpm' : '--',
-                      onChanged: (v) => setState(() => _avgHR = v),
-                    ),
-                  ],
-                )),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Media',
+                          style: TextStyle(
+                              color: skin.textMuted, fontSize: 12)),
+                      Slider(
+                        value: _avgHR,
+                        min: 0,
+                        max: 220,
+                        divisions: 220,
+                        activeColor: skin.accent,
+                        inactiveColor: skin.border,
+                        label:
+                            _avgHR > 0 ? '${_avgHR.round()} bpm' : '--',
+                        onChanged: (v) => setState(() => _avgHR = v),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(width: 12),
-                Expanded(child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Máxima', style: TextStyle(color: skin.textMuted, fontSize: 12)),
-                    Slider(
-                      value: _maxHR,
-                      min: 0, max: 220,
-                      divisions: 220,
-                      activeColor: skin.error,
-                      inactiveColor: skin.border,
-                      label: _maxHR > 0 ? '${_maxHR.round()} bpm' : '--',
-                      onChanged: (v) => setState(() => _maxHR = v),
-                    ),
-                  ],
-                )),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Máxima',
+                          style: TextStyle(
+                              color: skin.textMuted, fontSize: 12)),
+                      Slider(
+                        value: _maxHR,
+                        min: 0,
+                        max: 220,
+                        divisions: 220,
+                        activeColor: skin.error,
+                        inactiveColor: skin.border,
+                        label:
+                            _maxHR > 0 ? '${_maxHR.round()} bpm' : '--',
+                        onChanged: (v) => setState(() => _maxHR = v),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
 
             const SizedBox(height: 24),
 
-            // ── Cómo te has sentido ─────────────────────────
+            // ── Sensaciones ─────────────────────────────────
             _SectionTitle('SENSACIONES', skin),
             const SizedBox(height: 8),
             _ScaleRow(
@@ -210,7 +273,8 @@ class _SessionCompleteScreenState
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(skin.cardRadius),
-                  borderSide: BorderSide(color: skin.accent, width: 2),
+                  borderSide:
+                      BorderSide(color: skin.accent, width: 2),
                 ),
               ),
             ),
@@ -244,6 +308,33 @@ class _SessionCompleteScreenState
 
 // ── Helpers ──────────────────────────────────────────────────────
 
+class _SensorBanner extends StatelessWidget {
+  final dynamic skin;
+  const _SensorBanner({required this.skin});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: skin.success.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(skin.cardRadius),
+          border: Border.all(color: skin.success.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.sensors, color: skin.success, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Datos de FC rellenados automáticamente desde el sensor. Puedes ajustarlos.',
+                style: TextStyle(color: skin.success, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
 class _SectionTitle extends StatelessWidget {
   final String text;
   final dynamic skin;
@@ -272,12 +363,12 @@ class _NumberField extends StatelessWidget {
   @override
   Widget build(BuildContext context) => TextField(
         controller: controller,
-        keyboardType:
-            TextInputType.numberWithOptions(decimal: decimal),
+        keyboardType: TextInputType.numberWithOptions(decimal: decimal),
         style: TextStyle(color: skin.textPrimary),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(color: skin.textMuted, fontSize: 12),
+          labelStyle:
+              TextStyle(color: skin.textMuted, fontSize: 12),
           filled: true,
           fillColor: skin.backgroundCard,
           border: OutlineInputBorder(
@@ -324,13 +415,14 @@ class _RpeSlider extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                       fontFamily: skin.fontFamilyMono)),
               Text(_label,
-                  style:
-                      TextStyle(color: skin.textSecondary, fontSize: 14)),
+                  style: TextStyle(
+                      color: skin.textSecondary, fontSize: 14)),
             ],
           ),
           Slider(
             value: value,
-            min: 1, max: 10,
+            min: 1,
+            max: 10,
             divisions: 9,
             activeColor: skin.accent,
             inactiveColor: skin.border,
@@ -357,13 +449,15 @@ class _ScaleRow extends StatelessWidget {
           Expanded(
             flex: 2,
             child: Text(label,
-                style: TextStyle(color: skin.textSecondary, fontSize: 13)),
+                style: TextStyle(
+                    color: skin.textSecondary, fontSize: 13)),
           ),
           Expanded(
             flex: 3,
             child: Slider(
               value: value,
-              min: 1, max: 5,
+              min: 1,
+              max: 5,
               divisions: 4,
               activeColor: skin.accentSecondary,
               inactiveColor: skin.border,

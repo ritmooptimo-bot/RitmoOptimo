@@ -10,6 +10,7 @@ import '../screens/wellness/wellness_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/auth/pairing_screen.dart';
+import '../screens/session/ble_scan_screen.dart';
 
 // ── Routes ────────────────────────────────────────────────────────
 abstract class AppRoutes {
@@ -20,7 +21,8 @@ abstract class AppRoutes {
   static const sessionComplete = '/session/:id/complete';
   static const wellness        = '/wellness';
   static const profile         = '/profile';
-  static const pair            = '/pair';   // ritmooptimo://pair?token=XXX
+  static const pair            = '/pair';          // ritmooptimo://pair?token=XXX
+  static const bleScan         = '/ble-scan/:sessionId';
 }
 
 // ── Router ────────────────────────────────────────────────────────
@@ -95,6 +97,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.sessionComplete,
         builder: (_, state) => SessionCompleteScreen(
           sessionId: state.pathParameters['id']!,
+        ),
+      ),
+
+      // ── BLE Scan (full screen, fuera del shell) ──────────────
+      GoRoute(
+        path: AppRoutes.bleScan,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (_, state) => BleScanScreen(
+          sessionId: state.pathParameters['sessionId']!,
         ),
       ),
     ],

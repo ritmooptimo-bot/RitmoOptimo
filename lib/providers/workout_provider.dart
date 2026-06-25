@@ -1,5 +1,10 @@
+import 'dart:async';
+import 'dart:math';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/network/api_client.dart';
+import '../core/ble/ble_service.dart';
+import '../core/gps/gps_service.dart';
 
 // ── Dashboard State ──────────────────────────────────────────────
 class DashboardState {
@@ -62,28 +67,53 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
 // ── Active Session State ─────────────────────────────────────────
 class ActiveSessionState {
   final Map<String, dynamic>? session;
-  final bool isRunning;
+  final bool    isRunning;
   final DateTime? startedAt;
-  final int elapsedSeconds;
-  final int? currentHR;
+  final int     elapsedSeconds;
+  final int?    currentHR;
   final double? currentPace;
+  // Fase 2 — BLE
+  final String? bleDeviceName;
+  final bool    bleConnected;
+  final int?    hrMin;
+  final int?    hrMax;
+  final int     hrSum;
+  final int     hrCount;
+  // Fase 2 — GPS
+  final double  totalDistanceM;
 
   const ActiveSessionState({
     this.session,
-    this.isRunning = false,
+    this.isRunning      = false,
     this.startedAt,
     this.elapsedSeconds = 0,
     this.currentHR,
     this.currentPace,
+    this.bleDeviceName,
+    this.bleConnected   = false,
+    this.hrMin,
+    this.hrMax,
+    this.hrSum          = 0,
+    this.hrCount        = 0,
+    this.totalDistanceM = 0,
   });
+
+  int? get hrAvg => hrCount > 0 ? (hrSum / hrCount).round() : null;
 
   ActiveSessionState copyWith({
     Map<String, dynamic>? session,
-    bool? isRunning,
+    bool?    isRunning,
     DateTime? startedAt,
-    int? elapsedSeconds,
-    int? currentHR,
-    double? currentPace,
+    int?     elapsedSeconds,
+    int?     currentHR,
+    double?  currentPace,
+    String?  bleDeviceName,
+    bool?    bleConnected,
+    int?     hrMin,
+    int?     hrMax,
+    int?     hrSum,
+    int?     hrCount,
+    double?  totalDistanceM,
   }) =>
       ActiveSessionState(
         session:        session        ?? this.session,
@@ -92,26 +122,41 @@ class ActiveSessionState {
         elapsedSeconds: elapsedSeconds ?? this.elapsedSeconds,
         currentHR:      currentHR      ?? this.currentHR,
         currentPace:    currentPace    ?? this.currentPace,
+        bleDeviceName:  bleDeviceName  ?? this.bleDeviceName,
+        bleConnected:   bleConnected   ?? this.bleConnected,
+        hrMin:          hrMin          ?? this.hrMin,
+        hrMax:          hrMax          ?? this.hrMax,
+        hrSum:          hrSum          ?? this.hrSum,
+        hrCount:        hrCount        ?? this.hrCount,
+        totalDistanceM: totalDistanceM ?? this.totalDistanceM,
       );
 }
 
 class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
-  final ApiClient _api;
+  final ApiClient  _api;
+  final BleService _ble;
+  final GpsService _gps;
 
-  ActiveSessionNotifier(this._api) : super(const ActiveSessionState());
+  StreamSubscription<int>?      _hrSub;
+  StreamSubscription<GpsPoint>? _gpsSub;
 
+  ActiveSessionNotifier(this._api, this._ble, this._gps)
+      : super(const ActiveSessionState());
+
+  // ── API ─────────────────────────────────────────────────────
   Future<void> startSession(String sessionId) async {
     final result = await _api.startSession(sessionId);
     state = state.copyWith(
-      isRunning:  true,
-      startedAt:  DateTime.now(),
-      session:    result,
+      isRunning: true,
+      startedAt: DateTime.now(),
+      session:   result,
     );
   }
 
   void updateHR(int bpm) => state = state.copyWith(currentHR: bpm);
   void updatePace(double secPerKm) => state = state.copyWith(currentPace: secPerKm);
-  void tickSecond() => state = state.copyWith(elapsedSeconds: state.elapsedSeconds + 1);
+  void tickSecond() =>
+      state = state.copyWith(elapsedSeconds: state.elapsedSeconds + 1);
 
   Future<Map<String, dynamic>> completeSession(
     String sessionId,
@@ -120,6 +165,84 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     final result = await _api.completeSession(sessionId, actuals);
     state = const ActiveSessionState();
     return result;
+  }
+
+  // ── BLE ─────────────────────────────────────────────────────
+  Future<void> connectBLE(BluetoothDevice device) async {
+    // BleScanScreen ya puede haber conectado el device; solo conectar si no lo está.
+    if (!_ble.isConnected) {
+      await _ble.connect(device);
+    }
+    state = state.copyWith(
+      bleDeviceName: device.platformName.isNotEmpty
+          ? device.platformName
+          : device.remoteId.str,
+      bleConnected: true,
+    );
+    _hrSub?.cancel();
+    _hrSub = _ble.hrStream.listen(_onHR);
+  }
+
+  void _onHR(int bpm) {
+    state = state.copyWith(
+      currentHR: bpm,
+      hrMin: state.hrMin == null ? bpm : min(state.hrMin!, bpm),
+      hrMax: state.hrMax == null ? bpm : max(state.hrMax!, bpm),
+      hrSum: state.hrSum + bpm,
+      hrCount: state.hrCount + 1,
+    );
+  }
+
+  Future<void> disconnectBLE() async {
+    _hrSub?.cancel();
+    await _ble.disconnect();
+    state = state.copyWith(bleConnected: false);
+  }
+
+  // ── GPS ─────────────────────────────────────────────────────
+  void startGPS() {
+    _gps.startTracking();
+    _gpsSub = _gps.locationStream.listen(_onGpsPoint);
+  }
+
+  void _onGpsPoint(GpsPoint point) {
+    final pace = point.speedMps > 0.5 ? 1000 / point.speedMps : (state.currentPace ?? 0);
+    state = state.copyWith(
+      currentPace:    pace,
+      totalDistanceM: _gps.totalDistanceM,
+    );
+  }
+
+  // Detiene GPS y devuelve el track completo para subir al backend
+  GpsTrack stopGPS() {
+    _gpsSub?.cancel();
+    return _gps.stopTracking();
+  }
+
+  // Construye el payload de actuals incluyendo datos de sensores.
+  // Los valores manuales del formulario tienen preferencia si se pasan.
+  Map<String, dynamic> buildActuals({
+    int?    manualDurationMin,
+    double? manualDistanceM,
+    int?    manualRpe,
+    int?    manualHrAvg,
+    int?    manualHrMax,
+    Map<String, dynamic>? athleteFeedback,
+  }) =>
+      {
+        'actualDurationMin': manualDurationMin ?? (state.elapsedSeconds ~/ 60),
+        'actualDistanceM':   (manualDistanceM ?? state.totalDistanceM).round(),
+        'actualHrAvgBpm':    manualHrAvg ?? state.hrAvg,
+        'actualHrMaxBpm':    manualHrMax ?? state.hrMax,
+        'actualRpe':         manualRpe,
+        if (athleteFeedback != null) 'athleteFeedback': athleteFeedback,
+      };
+
+  @override
+  void dispose() {
+    _hrSub?.cancel();
+    _gpsSub?.cancel();
+    super.dispose();
   }
 }
 
@@ -131,5 +254,9 @@ final dashboardProvider =
 
 final activeSessionProvider =
     StateNotifierProvider<ActiveSessionNotifier, ActiveSessionState>(
-  (ref) => ActiveSessionNotifier(ref.read(apiClientProvider)),
+  (ref) => ActiveSessionNotifier(
+    ref.read(apiClientProvider),
+    ref.read(bleServiceProvider),
+    ref.read(gpsServiceProvider),
+  ),
 );
