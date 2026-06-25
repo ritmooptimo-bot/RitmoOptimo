@@ -148,12 +148,29 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       : super(const ActiveSessionState());
 
   // ── API ─────────────────────────────────────────────────────
+
+  // Marca la sesión como corriendo localmente (antes del API call).
+  void markAsRunning() {
+    if (state.isRunning) return;
+    state = state.copyWith(isRunning: true, startedAt: DateTime.now());
+  }
+
+  // Pre-carga datos de la sesión (bloques del plan) antes de iniciar.
+  Future<void> loadSession(String sessionId) async {
+    try {
+      final data = await _api.getSession(sessionId);
+      state = state.copyWith(session: data);
+    } catch (_) {
+      // Silencioso: los bloques se cargan igualmente al hacer startSession
+    }
+  }
+
   Future<void> startSession(String sessionId) async {
     final result = await _api.startSession(sessionId);
     state = state.copyWith(
-      isRunning: true,
-      startedAt: DateTime.now(),
-      session:   result,
+      isRunning:  true,
+      startedAt:  state.startedAt ?? DateTime.now(),
+      session:    result,
     );
   }
 

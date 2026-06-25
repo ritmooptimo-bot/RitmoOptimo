@@ -22,13 +22,24 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   Timer? _timer;
 
   @override
+  void initState() {
+    super.initState();
+    // Pre-carga datos del plan (bloques) para mostrarlos antes de "COMENZAR"
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(activeSessionProvider.notifier).loadSession(widget.sessionId);
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _timer?.cancel();
     super.dispose();
   }
 
   void _startTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
       ref.read(activeSessionProvider.notifier).tickSecond();
     });
   }
@@ -45,6 +56,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   }
 
   Future<void> _onStart() async {
+    if (_timer != null) return; // evitar doble inicio
+
     final notifier = ref.read(activeSessionProvider.notifier);
     final ble      = ref.read(bleServiceProvider);
     final gps      = ref.read(gpsServiceProvider);
@@ -58,11 +71,25 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final gpsOk = await gps.requestPermission();
     if (gpsOk) notifier.startGPS();
 
-    // 3. Iniciar sesión en el backend
-    await notifier.startSession(widget.sessionId);
-
-    // 4. Arrancar timer
+    // 3. Marcar como activa e iniciar timer ANTES del API call.
+    //    El FINALIZAR ya aparece aunque haya problema de red.
+    notifier.markAsRunning();
     _startTimer();
+
+    // 4. Sincronizar con backend (no bloqueante — la sesión ya corre localmente)
+    try {
+      await notifier.startSession(widget.sessionId);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sesión activa. Sin sincronización con servidor.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _onFinish() async {

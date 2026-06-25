@@ -105,6 +105,12 @@ class ApiClient {
     return r.data as Map<String, dynamic>;
   }
 
+  // ── Session Detail — pre-carga antes de comenzar ────────────────
+  Future<Map<String, dynamic>> getSession(String sessionId) async {
+    final r = await _dio.get('/athlete/session/$sessionId');
+    return r.data as Map<String, dynamic>;
+  }
+
   // ── Session Start (P1) ───────────────────────────────────────
   Future<Map<String, dynamic>> startSession(String sessionId) async {
     final r = await _dio.post('/sessions/$sessionId/start');

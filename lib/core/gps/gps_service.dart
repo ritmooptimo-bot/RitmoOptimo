@@ -97,6 +97,9 @@ class GpsService {
   }
 
   void _onPosition(Position pos) {
+    // Ignorar fixes imprecisos (calentamiento GPS, interior)
+    if (pos.accuracy > 20) return;
+
     // Calcular distancia incremental con haversine
     if (_lastPosition != null) {
       const dist = Distance();
