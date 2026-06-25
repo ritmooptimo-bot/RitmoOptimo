@@ -54,7 +54,8 @@ class BleService {
         for (final char in svc.characteristics) {
           if (char.uuid.str.toLowerCase() == _hrMeasurementUuid) {
             await char.setNotifyValue(true);
-            _hrSub = char.lastValueStream.listen((data) {
+            // onValueReceived solo emite notificaciones nuevas del dispositivo
+            _hrSub = char.onValueReceived.listen((data) {
               if (data.isNotEmpty) _hrController.add(_parseHR(data));
             });
             return;

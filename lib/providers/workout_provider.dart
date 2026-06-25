@@ -81,6 +81,7 @@ class ActiveSessionState {
   final int     hrCount;
   // Fase 2 — GPS
   final double  totalDistanceM;
+  final bool    gpsActive;
 
   const ActiveSessionState({
     this.session,
@@ -96,6 +97,7 @@ class ActiveSessionState {
     this.hrSum          = 0,
     this.hrCount        = 0,
     this.totalDistanceM = 0,
+    this.gpsActive      = false,
   });
 
   int? get hrAvg => hrCount > 0 ? (hrSum / hrCount).round() : null;
@@ -114,6 +116,7 @@ class ActiveSessionState {
     int?     hrSum,
     int?     hrCount,
     double?  totalDistanceM,
+    bool?    gpsActive,
   }) =>
       ActiveSessionState(
         session:        session        ?? this.session,
@@ -129,6 +132,7 @@ class ActiveSessionState {
         hrSum:          hrSum          ?? this.hrSum,
         hrCount:        hrCount        ?? this.hrCount,
         totalDistanceM: totalDistanceM ?? this.totalDistanceM,
+        gpsActive:      gpsActive      ?? this.gpsActive,
       );
 }
 
@@ -203,6 +207,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   void startGPS() {
     _gps.startTracking();
     _gpsSub = _gps.locationStream.listen(_onGpsPoint);
+    state = state.copyWith(gpsActive: true);
   }
 
   void _onGpsPoint(GpsPoint point) {
@@ -216,6 +221,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   // Detiene GPS y devuelve el track completo para subir al backend
   GpsTrack stopGPS() {
     _gpsSub?.cancel();
+    state = state.copyWith(gpsActive: false);
     return _gps.stopTracking();
   }
 

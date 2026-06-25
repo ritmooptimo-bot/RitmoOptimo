@@ -33,19 +33,25 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     });
   }
 
+  // Abre el scanner BLE. Puede llamarse antes o durante la sesión.
+  Future<void> _openBleScan() async {
+    final notifier = ref.read(activeSessionProvider.notifier);
+    final device   = await context.push<BluetoothDevice?>(
+      '/ble-scan/${widget.sessionId}',
+    );
+    if (device != null && mounted) {
+      await notifier.connectBLE(device);
+    }
+  }
+
   Future<void> _onStart() async {
     final notifier = ref.read(activeSessionProvider.notifier);
     final ble      = ref.read(bleServiceProvider);
     final gps      = ref.read(gpsServiceProvider);
 
-    // 1. BLE — si no hay sensor conectado, abrir scanner
+    // 1. BLE — solo abrir scanner si no hay sensor ya conectado
     if (!ble.isConnected) {
-      final device = await context.push<BluetoothDevice?>(
-        '/ble-scan/${widget.sessionId}',
-      );
-      if (device != null) {
-        await notifier.connectBLE(device);
-      }
+      await _openBleScan();
     }
 
     // 2. GPS — pedir permiso y empezar track
@@ -134,9 +140,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             elapsed: _formatTime(session.elapsedSeconds),
           ),
 
-          // ── BLE status chip ──────────────────────────────
-          if (session.isRunning)
-            _BleStatusChip(skin: skin, session: session),
+          // ── Estado sensores (siempre visible) ────────────
+          _SensorStatusRow(
+            skin: skin,
+            session: session,
+            onConnectBle: _openBleScan,
+          ),
 
           const SizedBox(height: 8),
 
@@ -261,12 +270,14 @@ class _SessionHeader extends StatelessWidget {
   }
 }
 
-// ── BLE status chip ──────────────────────────────────────────────
+// ── Sensor status row (BLE + GPS) — siempre visible ─────────────
 
-class _BleStatusChip extends StatelessWidget {
+class _SensorStatusRow extends StatelessWidget {
   final dynamic skin;
   final ActiveSessionState session;
-  const _BleStatusChip({required this.skin, required this.session});
+  final VoidCallback onConnectBle;
+  const _SensorStatusRow(
+      {required this.skin, required this.session, required this.onConnectBle});
 
   @override
   Widget build(BuildContext context) {
@@ -274,19 +285,145 @@ class _BleStatusChip extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Row(
         children: [
-          Icon(
-            session.bleConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
-            size: 14,
-            color: session.bleConnected ? skin.success : skin.textMuted,
+          Expanded(child: _BleCard(skin: skin, session: session, onConnect: onConnectBle)),
+          const SizedBox(width: 8),
+          Expanded(child: _GpsCard(skin: skin, session: session)),
+        ],
+      ),
+    );
+  }
+}
+
+class _BleCard extends StatelessWidget {
+  final dynamic skin;
+  final ActiveSessionState session;
+  final VoidCallback onConnect;
+  const _BleCard(
+      {required this.skin, required this.session, required this.onConnect});
+
+  @override
+  Widget build(BuildContext context) {
+    final connected = session.bleConnected;
+    final name      = session.bleDeviceName ?? 'Sensor FC';
+    final hr        = session.currentHR;
+
+    return GestureDetector(
+      onTap: connected ? null : onConnect,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: connected
+              ? skin.success.withOpacity(0.1)
+              : skin.backgroundCard,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: connected ? skin.success : skin.border,
+            width: 1.2,
           ),
-          const SizedBox(width: 6),
-          Text(
-            session.bleConnected
-                ? (session.bleDeviceName ?? 'Sensor conectado')
-                : 'Sin sensor de FC',
-            style: TextStyle(
-                color: session.bleConnected ? skin.success : skin.textMuted,
-                fontSize: 12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              connected
+                  ? Icons.bluetooth_connected
+                  : Icons.bluetooth_searching,
+              size: 18,
+              color: connected ? skin.success : skin.textMuted,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    connected ? name : 'Sin sensor FC',
+                    style: TextStyle(
+                      color: connected ? skin.success : skin.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (connected)
+                    Text(
+                      hr != null ? '$hr bpm' : 'Esperando dato...',
+                      style: TextStyle(
+                        color: hr != null ? skin.error : skin.textMuted,
+                        fontSize: 13,
+                        fontWeight: hr != null ? FontWeight.w700 : FontWeight.normal,
+                        fontFamily: hr != null ? skin.fontFamilyMono : null,
+                      ),
+                    )
+                  else
+                    Text(
+                      'Toca para conectar',
+                      style: TextStyle(color: skin.accent, fontSize: 11),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GpsCard extends StatelessWidget {
+  final dynamic skin;
+  final ActiveSessionState session;
+  const _GpsCard({required this.skin, required this.session});
+
+  @override
+  Widget build(BuildContext context) {
+    final active = session.gpsActive;
+    final dist   = session.totalDistanceM;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: active ? skin.accent.withOpacity(0.08) : skin.backgroundCard,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: active ? skin.accent : skin.border,
+          width: 1.2,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            active ? Icons.gps_fixed : Icons.gps_off,
+            size: 18,
+            color: active ? skin.accent : skin.textMuted,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'GPS',
+                  style: TextStyle(
+                    color: active ? skin.accent : skin.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  active
+                      ? (dist > 0
+                          ? '${(dist / 1000).toStringAsFixed(2)} km'
+                          : 'Activo')
+                      : 'Al comenzar',
+                  style: TextStyle(
+                    color: active ? skin.accentSecondary : skin.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: dist > 0 ? skin.fontFamilyMono : null,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
