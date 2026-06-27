@@ -1,7 +1,38 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+// FIX 1: Umbral de precisión más permisivo (20m → 35m).
+//         Con 20m se descartaban demasiados fixes en exterior con nubes o arboles.
+const _kMaxAccuracyM = 35.0;
+
+// FIX 2: Intervalo de actualización forzada cada 10 s aunque no haya movimiento.
+//         Evita quedarse sin puntos en tramos lentos o paradas breves.
+const _kIntervalDuration = Duration(seconds: 10);
+
+// FIX 3: Servicio en primer plano en Android → Android no mata el GPS en background.
+//         Requiere la declaración del service en AndroidManifest.xml.
+LocationSettings _buildLocationSettings() {
+  if (Platform.isAndroid) {
+    return AndroidSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 5,
+      intervalDuration: _kIntervalDuration,
+      foregroundNotificationConfig: const ForegroundNotificationConfig(
+        notificationTitle: 'GPS activo',
+        notificationText: 'RitmoOptimo está registrando tu ruta',
+        enableWakeLock: true,
+      ),
+    );
+  }
+  // iOS — no necesita foreground service (el sistema lo gestiona distinto)
+  return const LocationSettings(
+    accuracy: LocationAccuracy.high,
+    distanceFilter: 5,
+  );
+}
 
 class GpsPoint {
   final double lat;
@@ -62,6 +93,7 @@ class GpsService {
   Position? _lastPosition;
   double _totalDistanceM = 0;
   DateTime? _startTime;
+  DateTime? _lastPointTime;
 
   // Distancia acumulada en tiempo real para mostrar en UI
   double get totalDistanceM => _totalDistanceM;
@@ -86,19 +118,19 @@ class GpsService {
     _points.clear();
     _totalDistanceM = 0;
     _lastPosition = null;
+    _lastPointTime = null;
     _startTime = DateTime.now();
 
     _sub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5, // un punto cada 5 metros mínimo
-      ),
+      locationSettings: _buildLocationSettings(),
     ).listen(_onPosition);
   }
 
   void _onPosition(Position pos) {
-    // Ignorar fixes imprecisos (calentamiento GPS, interior)
-    if (pos.accuracy > 20) return;
+    // FIX 1: Umbral relajado a 35 m
+    if (pos.accuracy > _kMaxAccuracyM) return;
+
+    final now = DateTime.now();
 
     // Calcular distancia incremental con haversine
     if (_lastPosition != null) {
@@ -110,6 +142,14 @@ class GpsService {
       );
     }
     _lastPosition = pos;
+
+    // Guardar punto si han pasado al menos 5 s desde el último (evita duplicados
+    // cuando coinciden el stream y el intervalo de 10 s)
+    final timeSinceLast = _lastPointTime != null
+        ? now.difference(_lastPointTime!).inSeconds
+        : 999;
+    if (timeSinceLast < 5) return;
+    _lastPointTime = now;
 
     final point = GpsPoint(
       lat: pos.latitude,

@@ -60,6 +60,12 @@
                       android:pathPrefix="/app/activar"/>
             </intent-filter>
         </activity>
+        <!-- Geolocator foreground service — mantiene GPS activo en background -->
+        <service
+            android:name="com.baseflow.geolocator.GeolocatorService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
