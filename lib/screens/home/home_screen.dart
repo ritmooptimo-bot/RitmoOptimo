@@ -46,6 +46,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: CircularProgressIndicator(color: skin.accent),
                   ),
                 )
+              else if (dashboard.error != null && dashboard.todaySession == null && dashboard.fitness == null)
+                SliverFillRemaining(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.wifi_off_rounded, color: skin.textMuted, size: 40),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No se pudo cargar el panel',
+                            style: TextStyle(color: skin.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Comprueba tu conexión e inténtalo de nuevo.',
+                            style: TextStyle(color: skin.textMuted, fontSize: 12),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 20),
+                          ElevatedButton.icon(
+                            onPressed: () => ref.read(dashboardProvider.notifier).load(),
+                            icon: const Icon(Icons.refresh, size: 16),
+                            label: const Text('Reintentar'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
               else ...[
                 // ── Forma deportiva (CTL/ATL/TSB) ──────────
                 if (dashboard.fitness != null)
@@ -399,7 +430,7 @@ class _SessionContent extends StatelessWidget {
             ),
           ],
         ),
-        if (status == 'pending') ...[
+        if (status == 'pending' || status == 'scheduled') ...[
           const SizedBox(height: 12),
           Row(
             children: [

@@ -45,7 +45,7 @@ class DashboardState {
 class DashboardNotifier extends StateNotifier<DashboardState> {
   final ApiClient _api;
 
-  DashboardNotifier(this._api) : super(const DashboardState());
+  DashboardNotifier(this._api) : super(const DashboardState(isLoading: true));
 
   Future<void> load() async {
     state = state.copyWith(isLoading: true);

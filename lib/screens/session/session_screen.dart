@@ -467,11 +467,14 @@ class _SessionBlocks extends StatelessWidget {
   const _SessionBlocks(
       {required this.planned, required this.elapsed, required this.skin});
 
+  static num _blockDurMin(Map<String, dynamic> b) =>
+      (b['min'] ?? b['durationMin'] ?? b['duracion_min'] ?? b['duration_min'] ?? b['dur_min'] ?? 0) as num;
+
   int _activeIndex() {
     int cumSecs = 0;
     for (int i = 0; i < planned.length; i++) {
-      final block   = planned[i] as Map<String, dynamic>? ?? {};
-      final durMin  = (block['duracion_min'] ?? block['duration_min'] ?? block['dur_min'] ?? 0) as num;
+      final block  = planned[i] as Map<String, dynamic>? ?? {};
+      final durMin = _blockDurMin(block);
       cumSecs += (durMin.toDouble() * 60).round();
       if (elapsed < cumSecs) return i;
     }
@@ -518,18 +521,17 @@ class _BlockCard extends StatelessWidget {
       required this.index});
 
   String _blockLabel() {
-    final tipo = (block['tipo'] ?? block['type'] ?? block['nombre'] ?? '').toString();
+    final tipo = (block['block'] ?? block['blockType'] ?? block['tipo'] ?? block['type'] ?? block['nombre'] ?? '').toString();
     if (tipo.isEmpty) return 'Bloque ${index + 1}';
-    // Capitalizar primera letra
     return tipo[0].toUpperCase() + tipo.substring(1);
   }
 
   @override
   Widget build(BuildContext context) {
-    final durMin   = (block['duracion_min'] ?? block['duration_min'] ?? block['dur_min'] ?? 0) as num;
-    final zonaFC   = block['zona_fc'] ?? block['hr_zone'] ?? block['zona'];
-    final ritmo    = block['ritmo_objetivo'] ?? block['target_pace'] ?? block['pace'];
-    final desc     = block['descripcion'] ?? block['description'] ?? block['desc'] ?? '';
+    final durMin = _SessionBlocks._blockDurMin(block);
+    final zonaFC = block['zone'] ?? block['zona_fc'] ?? block['hr_zone'] ?? block['zona'];
+    final ritmo  = block['ritmo_objetivo'] ?? block['target_pace'] ?? block['pace'];
+    final desc   = block['descripcion'] ?? block['description'] ?? block['desc'] ?? '';
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
