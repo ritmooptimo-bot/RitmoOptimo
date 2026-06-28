@@ -197,11 +197,17 @@ class _FitnessCard extends StatelessWidget {
   final Map<String, dynamic> fitness;
   const _FitnessCard({required this.skin, required this.fitness});
 
+  static double _toDouble(dynamic v) {
+    if (v == null) return 0.0;
+    if (v is num)  return v.toDouble();
+    return double.tryParse(v.toString()) ?? 0.0;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final ctl = (fitness['ctl'] as num?)?.toDouble() ?? 0.0;
-    final atl = (fitness['atl'] as num?)?.toDouble() ?? 0.0;
-    final tsb = (fitness['tsb'] as num?)?.toDouble() ?? 0.0;
+    final ctl = _toDouble(fitness['ctl']);
+    final atl = _toDouble(fitness['atl']);
+    final tsb = _toDouble(fitness['tsb']);
 
     Color tsbColor;
     String tsbLabel;

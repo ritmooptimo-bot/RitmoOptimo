@@ -89,6 +89,7 @@ class SkinConfig {
       useMaterial3: true,
       fontFamily: fontFamily,
       scaffoldBackgroundColor: background,
+      canvasColor: background,
       colorScheme: ColorScheme.dark(
         primary: accent,
         secondary: accentSecondary,
