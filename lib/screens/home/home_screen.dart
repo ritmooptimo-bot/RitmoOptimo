@@ -54,17 +54,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.wifi_off_rounded, color: skin.textMuted, size: 40),
+                          Icon(Icons.wifi_off_rounded, color: skin.error, size: 40),
                           const SizedBox(height: 12),
                           Text(
                             'No se pudo cargar el panel',
                             style: TextStyle(color: skin.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Comprueba tu conexión e inténtalo de nuevo.',
-                            style: TextStyle(color: skin.textMuted, fontSize: 12),
-                            textAlign: TextAlign.center,
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: skin.error.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: skin.error.withValues(alpha: 0.3)),
+                            ),
+                            child: Text(
+                              dashboard.error!.replaceAll('Exception: ', ''),
+                              style: TextStyle(color: skin.error, fontSize: 11),
+                              textAlign: TextAlign.center,
+                            ),
                           ),
                           const SizedBox(height: 20),
                           ElevatedButton.icon(
@@ -89,7 +97,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: _TodaySessionCard(
                     skin: skin,
                     session: dashboard.todaySession,
-                    onTap: dashboard.todaySession != null
+                    onStart: dashboard.todaySession != null
                         ? () => context.push(
                             '/session/${dashboard.todaySession!['id']}')
                         : null,
@@ -299,23 +307,51 @@ class _Metric extends StatelessWidget {
 class _TodaySessionCard extends StatelessWidget {
   final SkinConfig skin;
   final Map<String, dynamic>? session;
-  final VoidCallback? onTap;
+  final VoidCallback? onStart;
   const _TodaySessionCard(
-      {required this.skin, this.session, this.onTap});
+      {required this.skin, this.session, this.onStart});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: session == null
-                ? _EmptySession(skin: skin)
-                : _SessionContent(skin: skin, session: session!),
+      child: Container(
+        decoration: BoxDecoration(
+          color: skin.backgroundCard,
+          borderRadius: BorderRadius.circular(skin.cardRadius),
+          border: Border.all(
+            color: session != null ? skin.accent.withValues(alpha: 0.6) : skin.border,
+            width: session != null ? 1.5 : 1,
           ),
+          boxShadow: session != null ? [
+            BoxShadow(
+              color: skin.accent.withValues(alpha: 0.12),
+              blurRadius: 16,
+              spreadRadius: 0,
+            )
+          ] : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (session != null)
+              Container(
+                height: 3,
+                decoration: BoxDecoration(
+                  color: skin.accent,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(skin.cardRadius),
+                    topRight: Radius.circular(skin.cardRadius),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: session == null
+                  ? _EmptySession(skin: skin)
+                  : _SessionContent(skin: skin, session: session!, onStart: onStart),
+            ),
+          ],
         ),
       ),
     );
@@ -349,14 +385,38 @@ class _EmptySession extends StatelessWidget {
 class _SessionContent extends StatelessWidget {
   final SkinConfig skin;
   final Map<String, dynamic> session;
-  const _SessionContent({required this.skin, required this.session});
+  final VoidCallback? onStart;
+  const _SessionContent({required this.skin, required this.session, this.onStart});
+
+  static String _sportLabel(String? raw) {
+    if (raw == null || raw.isEmpty) return 'Entrenamiento';
+    switch (raw.toLowerCase()) {
+      case 'running': case 'carrera': return 'Carrera';
+      case 'cycling': case 'bici':    return 'Ciclismo';
+      case 'swimming':                return 'Natación';
+      case 'strength': case 'fuerza': return 'Fuerza';
+      case 'base':                    return 'Rodaje base';
+      case 'recovery': case 'recuperacion': return 'Recuperación';
+      default: return raw[0].toUpperCase() + raw.substring(1);
+    }
+  }
+
+  static IconData _sportIcon(String? raw) {
+    switch (raw?.toLowerCase()) {
+      case 'cycling': case 'bici': return Icons.directions_bike;
+      case 'swimming':             return Icons.pool;
+      case 'strength': case 'fuerza': return Icons.fitness_center;
+      default:                     return Icons.directions_run;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final status  = session['status'] as String? ?? 'pending';
     final title   = session['title']  as String? ?? 'Sesión de entrenamiento';
-    final sport   = session['sport']  as String? ?? 'running';
-    final minutes = session['planned_duration_min'] as int? ?? 0;
+    final sport   = session['sport']  as String?;
+    final rawMin  = session['planned_duration_min'];
+    final minutes = (rawMin is num) ? rawMin.toInt() : 0;
 
     Color statusColor;
     String statusText;
@@ -367,6 +427,9 @@ class _SessionContent extends StatelessWidget {
       case 'in_progress':
         statusColor = skin.warning;
         statusText  = 'En progreso';
+      case 'scheduled':
+        statusColor = skin.accent;
+        statusText  = 'Programada';
       default:
         statusColor = skin.accent;
         statusText  = 'Pendiente';
@@ -378,20 +441,21 @@ class _SessionContent extends StatelessWidget {
         Row(
           children: [
             Text(
-              'HOY',
+              'SESIÓN DE HOY',
               style: TextStyle(
-                color: skin.textMuted,
+                color: skin.accent,
                 fontSize: 10,
                 letterSpacing: 1.5,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const Spacer(),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: statusColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: statusColor.withValues(alpha: 0.4)),
               ),
               child: Text(
                 statusText,
@@ -403,47 +467,53 @@ class _SessionContent extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Text(
           title,
           style: TextStyle(
             color: skin.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Row(
           children: [
-            Icon(Icons.directions_run, color: skin.textMuted, size: 14),
-            const SizedBox(width: 4),
+            Icon(_sportIcon(sport), color: skin.accentSecondary, size: 15),
+            const SizedBox(width: 5),
             Text(
-              sport[0].toUpperCase() + sport.substring(1),
-              style: TextStyle(color: skin.textMuted, fontSize: 13),
+              _sportLabel(sport),
+              style: TextStyle(color: skin.textSecondary, fontSize: 13),
             ),
             const SizedBox(width: 16),
-            Icon(Icons.timer_outlined, color: skin.textMuted, size: 14),
-            const SizedBox(width: 4),
+            Icon(Icons.timer_outlined, color: skin.accentSecondary, size: 15),
+            const SizedBox(width: 5),
             Text(
-              '${minutes}min',
-              style: TextStyle(color: skin.textMuted, fontSize: 13),
+              '${minutes} min',
+              style: TextStyle(color: skin.textSecondary, fontSize: 13),
             ),
           ],
         ),
-        if (status == 'pending' || status == 'scheduled') ...[
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Spacer(),
-              Icon(Icons.chevron_right, color: skin.accent, size: 20),
-              Text(
-                'Iniciar sesión',
-                style: TextStyle(
-                    color: skin.accent,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600),
+        if (status == 'pending' || status == 'scheduled' || status == 'approved') ...[
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: onStart,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: skin.accent,
+                foregroundColor: skin.background,
+                disabledBackgroundColor: skin.accent,
+                disabledForegroundColor: skin.background,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-            ],
+              icon: const Icon(Icons.play_arrow_rounded, size: 18),
+              label: const Text('Iniciar sesión',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            ),
           ),
         ],
       ],
