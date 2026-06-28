@@ -54,7 +54,7 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
       state = DashboardState(
         todaySession:   data['today_session'] as Map<String, dynamic>?,
         fitness:        data['fitness']       as Map<String, dynamic>?,
-        pendingAlerts:  (data['pending_alerts'] as int?) ?? 0,
+        pendingAlerts:  (data['pending_alerts'] as num?)?.toInt() ?? 0,
         latestWellness: data['latest_wellness'] as Map<String, dynamic>?,
         isLoading:      false,
       );

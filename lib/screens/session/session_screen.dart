@@ -340,7 +340,7 @@ class _BleCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: connected
-              ? skin.success.withOpacity(0.1)
+              ? skin.success.withValues(alpha: 0.1)
               : skin.backgroundCard,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
@@ -409,7 +409,7 @@ class _GpsCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: active ? skin.accent.withOpacity(0.08) : skin.backgroundCard,
+        color: active ? skin.accent.withValues(alpha: 0.08) : skin.backgroundCard,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: active ? skin.accent : skin.border,
@@ -467,8 +467,11 @@ class _SessionBlocks extends StatelessWidget {
   const _SessionBlocks(
       {required this.planned, required this.elapsed, required this.skin});
 
-  static num _blockDurMin(Map<String, dynamic> b) =>
-      (b['min'] ?? b['durationMin'] ?? b['duracion_min'] ?? b['duration_min'] ?? b['dur_min'] ?? 0) as num;
+  static num _blockDurMin(Map<String, dynamic> b) {
+    final v = b['min'] ?? b['durationMin'] ?? b['duracion_min'] ?? b['duration_min'] ?? b['dur_min'] ?? 0;
+    if (v is num) return v;
+    return num.tryParse(v.toString()) ?? 0;
+  }
 
   int _activeIndex() {
     int cumSecs = 0;
@@ -536,7 +539,7 @@ class _BlockCard extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       decoration: BoxDecoration(
-        color: isActive ? skin.accent.withOpacity(0.12) : skin.backgroundCard,
+        color: isActive ? skin.accent.withValues(alpha: 0.12) : skin.backgroundCard,
         borderRadius: BorderRadius.circular(skin.cardRadius),
         border: Border.all(
           color: isActive ? skin.accent : skin.border,
@@ -630,7 +633,7 @@ class _Tag extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.15),
+          color: color.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(label,

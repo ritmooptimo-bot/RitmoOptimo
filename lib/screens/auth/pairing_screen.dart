@@ -24,7 +24,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   @override
   void initState() {
     super.initState();
-    _runPairing();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _runPairing());
   }
 
   Future<void> _runPairing() async {
@@ -188,8 +188,8 @@ class _ErrorView extends StatelessWidget {
       Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFFF87171).withOpacity(0.12),
-          border: Border.all(color: const Color(0xFFF87171).withOpacity(0.35)),
+          color: const Color(0xFFF87171).withValues(alpha: 0.12),
+          border: Border.all(color: const Color(0xFFF87171).withValues(alpha: 0.35)),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Text(

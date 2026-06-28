@@ -42,14 +42,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
               if (dashboard.isLoading)
                 SliverFillRemaining(
-                  child: Center(
-                    child: CircularProgressIndicator(color: skin.accent),
+                  hasScrollBody: false,
+                  fillOverscroll: false,
+                  child: Container(
+                    color: skin.background,
+                    child: Center(
+                      child: CircularProgressIndicator(color: skin.accent),
+                    ),
                   ),
                 )
               else if (dashboard.error != null && dashboard.todaySession == null && dashboard.fitness == null)
                 SliverFillRemaining(
-                  child: Center(
-                    child: Padding(
+                  hasScrollBody: false,
+                  fillOverscroll: false,
+                  child: Container(
+                    color: skin.background,
+                    child: Center(
+                      child: Padding(
                       padding: const EdgeInsets.all(32),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -84,6 +93,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                     ),
                   ),
+                ),
                 )
               else ...[
                 // ── Forma deportiva (CTL/ATL/TSB) ──────────
@@ -422,7 +432,9 @@ class _SessionContent extends StatelessWidget {
     final title   = session['title']  as String? ?? 'Sesión de entrenamiento';
     final sport   = session['sport']  as String?;
     final rawMin  = session['planned_duration_min'];
-    final minutes = (rawMin is num) ? rawMin.toInt() : 0;
+    final minutes = rawMin is num
+        ? rawMin.toInt()
+        : int.tryParse(rawMin?.toString() ?? '') ?? 0;
 
     Color statusColor;
     String statusText;
@@ -535,8 +547,8 @@ class _WellnessCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fatigue    = (wellness['fatigue_level']  as int?) ?? 0;
-    final motivation = (wellness['motivation']     as int?) ?? 0;
+    final fatigue    = (wellness['fatigue_level']  as num?)?.toInt() ?? 0;
+    final motivation = (wellness['motivation']     as num?)?.toInt() ?? 0;
     final sleep      = (wellness['sleep_hours'] as num?)?.toDouble() ?? 0;
 
     return Padding(

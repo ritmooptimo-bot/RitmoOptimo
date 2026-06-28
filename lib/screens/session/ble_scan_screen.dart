@@ -279,7 +279,7 @@ class _EmptyView extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.bluetooth_disabled,
-                  size: 64, color: skin.textMuted.withOpacity(0.4)),
+                  size: 64, color: skin.textMuted.withValues(alpha: 0.4)),
               const SizedBox(height: 16),
               Text(
                 scanning
@@ -302,7 +302,7 @@ class _EmptyView extends StatelessWidget {
                   label: const Text('Buscar todos los dispositivos BLE'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: skin.accent,
-                    side: BorderSide(color: skin.accent.withOpacity(0.5)),
+                    side: BorderSide(color: skin.accent.withValues(alpha: 0.5)),
                     textStyle: const TextStyle(fontSize: 13),
                   ),
                 ),
@@ -341,7 +341,7 @@ class _DeviceCard extends StatelessWidget {
             style: TextStyle(
                 color: skin.textPrimary, fontWeight: FontWeight.w600)),
         subtitle: Text(
-          '${rssi} dBm  ·  ${result.device.remoteId.str.substring(0, 8)}...',
+          '${rssi} dBm  ·  ${result.device.remoteId.str.length >= 8 ? result.device.remoteId.str.substring(0, 8) : result.device.remoteId.str}...',
           style: TextStyle(color: skin.textMuted, fontSize: 11),
         ),
         trailing: ElevatedButton(

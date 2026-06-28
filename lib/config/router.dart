@@ -30,12 +30,11 @@ final _rootNavigatorKey  = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authProvider);
-
-  return GoRouter(
+  final router = GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: AppRoutes.home,
     redirect: (context, state) {
+      final authState = ref.read(authProvider);
       final isAuth    = authState.isAuthenticated;
       final isUnknown = authState.status == AuthStatus.unknown;
       final loc       = state.matchedLocation;
@@ -110,6 +109,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+
+  ref.listen<AuthState>(authProvider, (_, __) => router.refresh());
+  return router;
 });
 
 // ── Bottom Nav Shell ─────────────────────────────────────────────

@@ -74,7 +74,7 @@ class _SessionTile extends StatelessWidget {
     final date   = session['session_date'] as String? ?? '';
     final title  = session['title'] as String? ?? 'Sesión';
     final status = session['status'] as String? ?? 'pending';
-    final min    = session['planned_duration_min'] as int? ?? 0;
+    final min    = (session['planned_duration_min'] as num?)?.toInt() ?? 0;
 
     final statusColor = status == 'completed' ? skin.success
         : status == 'in_progress' ? skin.warning : skin.textMuted;

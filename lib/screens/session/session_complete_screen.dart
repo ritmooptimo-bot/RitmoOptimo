@@ -316,9 +316,9 @@ class _SensorBanner extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: skin.success.withOpacity(0.12),
+          color: skin.success.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(skin.cardRadius),
-          border: Border.all(color: skin.success.withOpacity(0.3)),
+          border: Border.all(color: skin.success.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [

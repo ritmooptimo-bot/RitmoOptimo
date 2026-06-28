@@ -85,19 +85,30 @@ class SkinConfig {
 
   // Genera el ThemeData de Flutter a partir del skin
   ThemeData toTheme() {
+    final isDark = background.computeLuminance() < 0.5;
+    final colorScheme = isDark
+        ? ColorScheme.dark(
+            primary: accent,
+            secondary: accentSecondary,
+            surface: backgroundCard,
+            onPrimary: textPrimary,
+            onSurface: textPrimary,
+            error: error,
+          )
+        : ColorScheme.light(
+            primary: accent,
+            secondary: accentSecondary,
+            surface: backgroundCard,
+            onPrimary: background,
+            onSurface: textPrimary,
+            error: error,
+          );
     return ThemeData(
       useMaterial3: true,
       fontFamily: fontFamily,
       scaffoldBackgroundColor: background,
       canvasColor: background,
-      colorScheme: ColorScheme.dark(
-        primary: accent,
-        secondary: accentSecondary,
-        surface: backgroundCard,
-        onPrimary: textPrimary,
-        onSurface: textPrimary,
-        error: error,
-      ),
+      colorScheme: colorScheme,
       cardTheme: CardThemeData(
         color: backgroundCard,
         elevation: 0,

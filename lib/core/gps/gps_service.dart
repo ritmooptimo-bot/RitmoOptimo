@@ -73,7 +73,7 @@ class GpsTrack {
   });
 
   double get avgPaceSecKm {
-    if (totalDistanceM <= 0) return 0;
+    if (totalDistanceM <= 0 || durationSec <= 0) return 0;
     final avgSpeedMps = totalDistanceM / durationSec;
     return avgSpeedMps > 0 ? 1000 / avgSpeedMps : 0;
   }
