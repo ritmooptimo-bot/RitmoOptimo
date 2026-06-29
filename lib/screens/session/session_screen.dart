@@ -20,14 +20,15 @@ class SessionScreen extends ConsumerStatefulWidget {
 
 class _SessionScreenState extends ConsumerState<SessionScreen> {
   Timer? _timer;
+  bool _loadingSession = true; // true hasta que loadSession() devuelva datos
 
   @override
   void initState() {
     super.initState();
-    // Pre-carga datos del plan (bloques) para mostrarlos antes de "COMENZAR"
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (mounted) {
-        ref.read(activeSessionProvider.notifier).loadSession(widget.sessionId);
+        await ref.read(activeSessionProvider.notifier).loadSession(widget.sessionId);
+        if (mounted) setState(() => _loadingSession = false);
       }
     });
   }
@@ -93,27 +94,94 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   }
 
   Future<void> _onFinish() async {
+    final skin    = ref.read(activeSkinProvider);
+    final elapsed = ref.read(activeSessionProvider).elapsedSeconds;
+    final isShort = elapsed < 120; // menos de 2 minutos
+
+    // Siempre pedir confirmación — aviso extra si la sesión fue muy corta
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: skin.backgroundCard,
+        title: Text(
+          isShort ? '⚠️  Sesión muy corta' : '¿Finalizar sesión?',
+          style: TextStyle(color: skin.textPrimary, fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          isShort
+              ? 'Solo llevas ${elapsed}s entrenando.\n¿Estás seguro de que quieres finalizar ya?'
+              : 'Llevas ${_formatTime(elapsed)} entrenando.\n¿Confirmas el fin de la sesión?',
+          style: TextStyle(color: skin.textSecondary, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Continuar entrenando', style: TextStyle(color: skin.accent)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: skin.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Finalizar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
     _timer?.cancel();
 
     final notifier = ref.read(activeSessionProvider.notifier);
     final api      = ref.read(apiClientProvider);
     final session  = ref.read(activeSessionProvider);
 
-    // 1. Parar GPS y recoger track
     final track = notifier.stopGPS();
-
-    // 2. Subir track al backend (fire-and-forget)
     if (track.points.isNotEmpty) {
       api.postGPSTrack(widget.sessionId, track.toBackendPayload())
           .catchError((e) => debugPrint('[GPS] Error upload: $e'));
     }
 
-    // 3. Desconectar BLE
     if (session.bleConnected) await notifier.disconnectBLE();
 
     if (mounted) {
       context.pushReplacement('/session/${widget.sessionId}/complete');
     }
+  }
+
+  Future<void> _onRedo() async {
+    final skin = ref.read(activeSkinProvider);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: skin.backgroundCard,
+        title: Text('Sesión ya completada',
+            style: TextStyle(color: skin.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+        content: Text(
+          'Esta sesión ya está registrada como completada por tu entrenador.\n\n'
+          'Si la realizas de nuevo, los nuevos datos de entrenamiento reemplazarán a los anteriores.\n\n'
+          '¿Quieres continuar?',
+          style: TextStyle(color: skin.textSecondary, height: 1.55),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancelar', style: TextStyle(color: skin.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Realizar de nuevo'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    await _onStart();
   }
 
   String _formatTime(int seconds) {
@@ -131,6 +199,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final skin    = ref.watch(activeSkinProvider);
     final session = ref.watch(activeSessionProvider);
 
+    final sessionStatus  = session.session?['status'] as String? ?? '';
+    final isCompleted    = !_loadingSession && sessionStatus == 'completed' && !session.isRunning;
+    final isPreStart     = !_loadingSession && !session.isRunning && !isCompleted;
+
     return Scaffold(
       backgroundColor: skin.background,
       appBar: AppBar(
@@ -139,42 +211,44 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
           onPressed: () => context.pop(),
         ),
         title: Text(
-          session.isRunning ? 'EN CURSO' : 'SESIÓN',
+          isCompleted        ? 'COMPLETADA'
+              : session.isRunning ? 'EN CURSO'
+              : 'SESIÓN',
           style: TextStyle(
-              color: skin.textPrimary, letterSpacing: 2, fontSize: 14),
+              color: isCompleted ? skin.success : skin.textPrimary,
+              letterSpacing: 2,
+              fontSize: 14),
         ),
         backgroundColor: skin.backgroundSecondary,
         actions: [
           if (session.isRunning)
             TextButton(
               onPressed: _onFinish,
-              child: Text(
-                'FINALIZAR',
-                style: TextStyle(
-                    color: skin.error,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1),
-              ),
+              child: Text('FINALIZAR',
+                  style: TextStyle(
+                      color: skin.error, fontWeight: FontWeight.w700, letterSpacing: 1)),
             ),
         ],
       ),
       body: Column(
         children: [
-          // ── Header: timer + FC + ritmo ───────────────────
+          // ── Header: timer (en curso) o resumen (completada) ──
           _SessionHeader(
             skin: skin,
             session: session,
             elapsed: _formatTime(session.elapsedSeconds),
+            isCompleted: isCompleted,
           ),
 
-          // ── Estado sensores (siempre visible) ────────────
-          _SensorStatusRow(
-            skin: skin,
-            session: session,
-            onConnectBle: _openBleScan,
-          ),
+          // ── Banner "Completada" con datos reales ──────────
+          if (isCompleted)
+            _CompletedSummaryBanner(skin: skin, sessionData: session.session!),
 
-          const SizedBox(height: 8),
+          // ── Estado sensores — solo cuando no está completada ─
+          if (!isCompleted) ...[
+            _SensorStatusRow(skin: skin, session: session, onConnectBle: _openBleScan),
+            const SizedBox(height: 8),
+          ],
 
           // ── Bloques del plan ─────────────────────────────
           Expanded(
@@ -185,35 +259,59 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             ),
           ),
 
-          // ── Botón principal ──────────────────────────────
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: session.isRunning
-                  ? ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: skin.error,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: _onFinish,
-                      child: const Text(
-                        'FINALIZAR SESIÓN',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w700, letterSpacing: 2),
-                      ),
-                    )
-                  : ElevatedButton(
-                      onPressed: _onStart,
-                      child: const Text(
-                        'COMENZAR',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w700, letterSpacing: 2),
-                      ),
-                    ),
+          // ── Área inferior: botón según estado ────────────
+          if (_loadingSession)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: null,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(width: 18, height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2,
+                              color: skin.textMuted)),
+                      const SizedBox(width: 12),
+                      Text('Cargando sesión...',
+                          style: TextStyle(color: skin.textMuted)),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else if (isCompleted)
+            _CompletedFooter(skin: skin, onRedo: _onRedo)
+          else if (session.isRunning)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: skin.error, foregroundColor: Colors.white),
+                  onPressed: _onFinish,
+                  child: const Text('FINALIZAR SESIÓN',
+                      style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 2)),
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: isPreStart ? _onStart : null,
+                  child: const Text('COMENZAR',
+                      style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 2)),
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -226,8 +324,10 @@ class _SessionHeader extends StatelessWidget {
   final SkinConfig skin;
   final ActiveSessionState session;
   final String elapsed;
+  final bool isCompleted;
   const _SessionHeader(
-      {required this.skin, required this.session, required this.elapsed});
+      {required this.skin, required this.session, required this.elapsed,
+       this.isCompleted = false});
 
   @override
   Widget build(BuildContext context) {
@@ -237,16 +337,19 @@ class _SessionHeader extends StatelessWidget {
       color: skin.backgroundSecondary,
       child: Column(
         children: [
-          Text(
-            elapsed,
-            style: TextStyle(
-              fontFamily: skin.fontFamilyMono,
-              fontSize: 56,
-              fontWeight: FontWeight.w700,
-              color: session.isRunning ? skin.accent : skin.textMuted,
-              letterSpacing: 4,
+          if (isCompleted)
+            Icon(Icons.check_circle_outline, size: 56, color: skin.success)
+          else
+            Text(
+              elapsed,
+              style: TextStyle(
+                fontFamily: skin.fontFamilyMono,
+                fontSize: 56,
+                fontWeight: FontWeight.w700,
+                color: session.isRunning ? skin.accent : skin.textMuted,
+                letterSpacing: 4,
+              ),
             ),
-          ),
           const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -643,6 +746,130 @@ class _Tag extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.5)),
       );
+}
+
+// ── Banner resumen cuando la sesión está completada ──────────────
+
+class _CompletedSummaryBanner extends StatelessWidget {
+  final dynamic skin;
+  final Map<String, dynamic> sessionData;
+  const _CompletedSummaryBanner({required this.skin, required this.sessionData});
+
+  @override
+  Widget build(BuildContext context) {
+    final actualMin  = (sessionData['actual_duration_min'] as num?)?.toInt();
+    final actualDistM= (sessionData['actual_distance_m']   as num?)?.toDouble();
+    final actualHr   = (sessionData['actual_hr_avg_bpm']   as num?)?.toInt();
+    final completedAt= sessionData['completed_at'] as String?;
+
+    String? completedLabel;
+    if (completedAt != null) {
+      try {
+        final dt = DateTime.parse(completedAt).toLocal();
+        completedLabel = '${dt.day.toString().padLeft(2,'0')}/${dt.month.toString().padLeft(2,'0')} '
+            '${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}';
+      } catch (_) {}
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: skin.success.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(skin.cardRadius),
+        border: Border.all(color: skin.success.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.check_circle, color: skin.success, size: 16),
+            const SizedBox(width: 8),
+            Text('Sesión completada${completedLabel != null ? " · $completedLabel" : ""}',
+                style: TextStyle(color: skin.success, fontWeight: FontWeight.w700, fontSize: 13)),
+          ]),
+          if (actualMin != null || actualDistM != null || actualHr != null) ...[
+            const SizedBox(height: 10),
+            Row(children: [
+              if (actualMin != null)
+                _SummaryChip(label: '${actualMin} min', icon: Icons.timer_outlined, skin: skin),
+              if (actualDistM != null && actualDistM > 0)
+                _SummaryChip(
+                    label: '${(actualDistM / 1000).toStringAsFixed(2)} km',
+                    icon: Icons.route_outlined, skin: skin),
+              if (actualHr != null)
+                _SummaryChip(label: '$actualHr bpm', icon: Icons.favorite_outline, skin: skin),
+            ]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final dynamic skin;
+  const _SummaryChip({required this.label, required this.icon, required this.skin});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(right: 16),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 13, color: skin.textMuted),
+      const SizedBox(width: 4),
+      Text(label, style: TextStyle(color: skin.textSecondary, fontSize: 12,
+          fontFamily: skin.fontFamilyMono)),
+    ]),
+  );
+}
+
+// ── Pie de página cuando la sesión está completada ───────────────
+
+class _CompletedFooter extends StatelessWidget {
+  final dynamic skin;
+  final VoidCallback onRedo;
+  const _CompletedFooter({required this.skin, required this.onRedo});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      // Indicador visual "Completada"
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: skin.success.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(skin.cardRadius),
+          border: Border.all(color: skin.success.withValues(alpha: 0.3)),
+        ),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.check_circle, color: skin.success, size: 20),
+          const SizedBox(width: 10),
+          Text('Completada — buen trabajo',
+              style: TextStyle(color: skin.success, fontWeight: FontWeight.w600, fontSize: 14)),
+        ]),
+      ),
+      const SizedBox(height: 10),
+      // Botón "realizar de nuevo" discreto
+      SizedBox(
+        width: double.infinity,
+        height: 44,
+        child: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: skin.textMuted,
+            side: BorderSide(color: skin.border),
+          ),
+          icon: Icon(Icons.replay, size: 16, color: skin.textMuted),
+          label: Text('Realizar de nuevo',
+              style: TextStyle(color: skin.textMuted, letterSpacing: 0.5)),
+          onPressed: onRedo,
+        ),
+      ),
+    ]),
+  );
 }
 
 class _DataBadge extends StatelessWidget {
