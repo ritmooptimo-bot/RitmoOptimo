@@ -4,6 +4,10 @@ import 'package:go_router/go_router.dart';
 import '../../providers/skin_provider.dart';
 import '../../providers/workout_provider.dart';
 import '../../config/router.dart';
+import '../../core/gps/gps_service.dart';
+import '../../core/network/api_client.dart';
+import '../../widgets/route_map_widget.dart';
+import 'hr_recovery_screen.dart';
 
 // ── Session Complete Screen ──────────────────────────────────────
 // Atleta registra los datos reales al finalizar la sesión.
@@ -34,6 +38,7 @@ class _SessionCompleteScreenState
   String _notes       = '';
 
   bool _sensorDataAvailable = false;
+  GpsTrack? _gpsTrack;
 
   @override
   void initState() {
@@ -69,6 +74,12 @@ class _SessionCompleteScreenState
     } else {
       setState(() {});
     }
+
+    // GPS track (guardado por stopGPS en la pantalla de sesión)
+    final track = session.completedTrack;
+    if (track != null && track.points.length >= 2) {
+      setState(() => _gpsTrack = track);
+    }
   }
 
   @override
@@ -81,6 +92,16 @@ class _SessionCompleteScreenState
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
+      // Subir track GPS si hay puntos (no bloqueante: error se silencia)
+      if (_gpsTrack != null && _gpsTrack!.points.length >= 2) {
+        try {
+          await ref.read(apiClientProvider).postGPSTrack(
+            widget.sessionId,
+            _gpsTrack!.toBackendPayload(),
+          );
+        } catch (_) {}
+      }
+
       await ref.read(activeSessionProvider.notifier).completeSession(
         widget.sessionId,
         {
@@ -133,6 +154,17 @@ class _SessionCompleteScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Mapa de ruta ────────────────────────────────
+            if (_gpsTrack != null && _gpsTrack!.points.length >= 2) ...[
+              _SectionTitle('RECORRIDO', skin),
+              const SizedBox(height: 8),
+              RouteMapWidget(
+                points: _gpsTrack!.points,
+                maxHR: _maxHR > 0 ? _maxHR.round() : null,
+              ),
+              const SizedBox(height: 16),
+            ],
+
             // ── Banner sensor data ──────────────────────────
             if (_sensorDataAvailable)
               _SensorBanner(skin: skin),
@@ -280,6 +312,35 @@ class _SessionCompleteScreenState
             ),
 
             const SizedBox(height: 32),
+
+            // ── Recuperación cardíaca (solo con BLE conectado) ──
+            if (ref.read(activeSessionProvider).bleConnected) ...[
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: skin.error,
+                    side: BorderSide(
+                        color: skin.error.withValues(alpha: 0.6), width: 1.2),
+                  ),
+                  icon: Icon(Icons.favorite, size: 18, color: skin.error),
+                  label: const Text(
+                    'Medir recuperación cardíaca',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  onPressed: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            HrRecoveryScreen(sessionId: widget.sessionId),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // ── Guardar ──────────────────────────────────────
             SizedBox(

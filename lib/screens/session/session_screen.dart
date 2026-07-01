@@ -3,12 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../../providers/skin_provider.dart';
 import '../../providers/workout_provider.dart';
 import '../../config/skins/skin_config.dart';
 import '../../core/network/api_client.dart';
 import '../../core/ble/ble_service.dart';
 import '../../core/gps/gps_service.dart';
+import '../../core/audio/audio_cue_service.dart';
+import '../../core/audio/session_audio_controller.dart';
+import 'block_progress_widget.dart';
+import 'interval_rep_widget.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -21,27 +27,56 @@ class SessionScreen extends ConsumerStatefulWidget {
 class _SessionScreenState extends ConsumerState<SessionScreen> {
   Timer? _timer;
   bool _loadingSession = true; // true hasta que loadSession() devuelva datos
+  // GPS live map
+  final List<GpsPoint> _mapPoints = [];
+  late final MapController _mapController;
+  StreamSubscription<GpsPoint>? _gpsMapSub;
+  bool _mapReady = false;
+  // Audio-Guided Session (AGS)
+  final AudioCueService _audioCueService = AudioCueService();
+  SessionAudioController? _audioController;
 
   @override
   void initState() {
     super.initState();
+    _mapController = MapController();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (mounted) {
         await ref.read(activeSessionProvider.notifier).loadSession(widget.sessionId);
-        if (mounted) setState(() => _loadingSession = false);
+        if (mounted) {
+          setState(() => _loadingSession = false);
+          _initAudioController();
+        }
       }
     });
+  }
+
+  void _initAudioController() {
+    final blocks = ref.read(activeSessionProvider).session?['planned_structure'] as List<dynamic>?;
+    if (blocks != null && blocks.isNotEmpty && _audioController == null) {
+      _audioController = SessionAudioController(
+        audio: _audioCueService,
+        rawBlocks: blocks,
+      );
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _gpsMapSub?.cancel();
+    _audioCueService.dispose();
     super.dispose();
   }
 
   void _startTimer() {
     _timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
       ref.read(activeSessionProvider.notifier).tickSecond();
+      if (_audioController != null) {
+        final elapsed = ref.read(activeSessionProvider).elapsedSeconds;
+        final distM   = ref.read(gpsServiceProvider).totalDistanceM.round();
+        _audioController!.onTick(elapsed, distanceM: distM);
+      }
     });
   }
 
@@ -70,12 +105,25 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
 
     // 2. GPS — pedir permiso y empezar track
     final gpsOk = await gps.requestPermission();
-    if (gpsOk) notifier.startGPS();
+    if (gpsOk) {
+      notifier.startGPS();
+      _gpsMapSub?.cancel();
+      _gpsMapSub = gps.locationStream.listen((point) {
+        if (!mounted) return;
+        setState(() => _mapPoints.add(point));
+        if (_mapReady) {
+          try { _mapController.move(LatLng(point.lat, point.lng), 16); }
+          catch (_) {}
+        }
+      });
+    }
 
     // 3. Marcar como activa e iniciar timer ANTES del API call.
     //    El FINALIZAR ya aparece aunque haya problema de red.
     notifier.markAsRunning();
+    _initAudioController(); // por si aún no se había inicializado
     _startTimer();
+    unawaited(_audioController?.onSessionStart());
 
     // 4. Sincronizar con backend (no bloqueante — la sesión ya corre localmente)
     try {
@@ -142,7 +190,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final track = notifier.stopGPS();
     if (track.points.isNotEmpty) {
       api.postGPSTrack(widget.sessionId, track.toBackendPayload())
-          .catchError((e) => debugPrint('[GPS] Error upload: $e'));
+          .catchError((e) { debugPrint('[GPS] Error upload: $e'); return <String, dynamic>{}; });
     }
 
     if (session.bleConnected) await notifier.disconnectBLE();
@@ -192,6 +240,93 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     }
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  Color _paceColor(double speedMps) {
+    if (speedMps > 3.5) return const Color(0xFF22C55E); // rápido
+    if (speedMps > 2.5) return const Color(0xFFEAB308); // medio
+    return const Color(0xFFEF4444);                      // lento
+  }
+
+  Widget _buildLiveMap(SkinConfig skin) {
+    final center = _mapPoints.isNotEmpty
+        ? LatLng(_mapPoints.last.lat, _mapPoints.last.lng)
+        : const LatLng(40.4168, -3.7038); // Madrid default
+
+    final polylines = <Polyline>[];
+    for (int i = 0; i < _mapPoints.length - 1; i++) {
+      polylines.add(Polyline(
+        points: [
+          LatLng(_mapPoints[i].lat, _mapPoints[i].lng),
+          LatLng(_mapPoints[i + 1].lat, _mapPoints[i + 1].lng),
+        ],
+        color: _paceColor(_mapPoints[i].speedMps),
+        strokeWidth: 4,
+      ));
+    }
+
+    return Stack(
+      children: [
+        FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: center,
+            initialZoom: 16,
+            onMapReady: () {
+              if (mounted) setState(() => _mapReady = true);
+            },
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.ritmooptimo.app',
+            ),
+            if (polylines.isNotEmpty) PolylineLayer(polylines: polylines),
+            if (_mapPoints.isNotEmpty)
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: center,
+                    width: 20,
+                    height: 20,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: skin.accent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: skin.accent.withValues(alpha: 0.5),
+                            blurRadius: 8,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+        if (_mapPoints.isEmpty)
+          Positioned(
+            top: 8, left: 0, right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Esperando señal GPS...',
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   @override
@@ -248,6 +383,24 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
           if (!isCompleted) ...[
             _SensorStatusRow(skin: skin, session: session, onConnectBle: _openBleScan),
             const SizedBox(height: 8),
+            if (session.isRunning) ...[
+              const Divider(height: 1, thickness: 0.5),
+              SizedBox(height: 230, child: _buildLiveMap(skin)),
+            ],
+            // ── AGS: progreso de bloque en curso ──────────
+            if (session.isRunning && _audioController != null) ...[
+              BlockProgressWidget(
+                uiState: _audioController!.getUIState(session.elapsedSeconds),
+                skin: skin,
+                onSkip: () => setState(() => _audioController?.requestSkip()),
+              ),
+              if (_audioController!.currentBlock?.isInterval == true)
+                IntervalRepWidget(
+                  smoothedPaceSecKm: ref.read(gpsServiceProvider).smoothedPaceSecKm,
+                  targetPace: _audioController!.currentBlock?.targetPace,
+                  skin: skin,
+                ),
+            ],
           ],
 
           // ── Bloques del plan ─────────────────────────────

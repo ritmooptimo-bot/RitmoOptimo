@@ -12,6 +12,7 @@ class DashboardState {
   final Map<String, dynamic>? fitness;
   final int pendingAlerts;
   final Map<String, dynamic>? latestWellness;
+  final Map<String, dynamic>? sessionStats;
   final bool isLoading;
   final String? error;
 
@@ -20,6 +21,7 @@ class DashboardState {
     this.fitness,
     this.pendingAlerts = 0,
     this.latestWellness,
+    this.sessionStats,
     this.isLoading = false,
     this.error,
   });
@@ -29,6 +31,7 @@ class DashboardState {
     Map<String, dynamic>? fitness,
     int? pendingAlerts,
     Map<String, dynamic>? latestWellness,
+    Map<String, dynamic>? sessionStats,
     bool? isLoading,
     String? error,
   }) =>
@@ -37,6 +40,7 @@ class DashboardState {
         fitness:        fitness        ?? this.fitness,
         pendingAlerts:  pendingAlerts  ?? this.pendingAlerts,
         latestWellness: latestWellness ?? this.latestWellness,
+        sessionStats:   sessionStats   ?? this.sessionStats,
         isLoading:      isLoading      ?? this.isLoading,
         error:          error,
       );
@@ -52,10 +56,11 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
     try {
       final data = await _api.getDashboard();
       state = DashboardState(
-        todaySession:   data['today_session'] as Map<String, dynamic>?,
-        fitness:        data['fitness']       as Map<String, dynamic>?,
+        todaySession:   data['today_session']  as Map<String, dynamic>?,
+        fitness:        data['fitness']        as Map<String, dynamic>?,
         pendingAlerts:  (data['pending_alerts'] as num?)?.toInt() ?? 0,
         latestWellness: data['latest_wellness'] as Map<String, dynamic>?,
+        sessionStats:   data['session_stats']  as Map<String, dynamic>?,
         isLoading:      false,
       );
     } catch (e) {
@@ -80,8 +85,9 @@ class ActiveSessionState {
   final int     hrSum;
   final int     hrCount;
   // Fase 2 — GPS
-  final double  totalDistanceM;
-  final bool    gpsActive;
+  final double    totalDistanceM;
+  final bool      gpsActive;
+  final GpsTrack? completedTrack;
 
   const ActiveSessionState({
     this.session,
@@ -98,6 +104,7 @@ class ActiveSessionState {
     this.hrCount        = 0,
     this.totalDistanceM = 0,
     this.gpsActive      = false,
+    this.completedTrack,
   });
 
   int? get hrAvg => hrCount > 0 ? (hrSum / hrCount).round() : null;
@@ -115,8 +122,9 @@ class ActiveSessionState {
     int?     hrMax,
     int?     hrSum,
     int?     hrCount,
-    double?  totalDistanceM,
-    bool?    gpsActive,
+    double?   totalDistanceM,
+    bool?     gpsActive,
+    GpsTrack? completedTrack,
   }) =>
       ActiveSessionState(
         session:        session        ?? this.session,
@@ -133,6 +141,7 @@ class ActiveSessionState {
         hrCount:        hrCount        ?? this.hrCount,
         totalDistanceM: totalDistanceM ?? this.totalDistanceM,
         gpsActive:      gpsActive      ?? this.gpsActive,
+        completedTrack: completedTrack ?? this.completedTrack,
       );
 }
 
@@ -176,8 +185,13 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
   void updateHR(int bpm) => state = state.copyWith(currentHR: bpm);
   void updatePace(double secPerKm) => state = state.copyWith(currentPace: secPerKm);
-  void tickSecond() =>
-      state = state.copyWith(elapsedSeconds: state.elapsedSeconds + 1);
+
+  // Fix #3: ancla en DateTime.now() - startedAt → deriva cero en sesiones largas
+  void tickSecond() {
+    if (state.startedAt == null) return;
+    final real = DateTime.now().difference(state.startedAt!).inSeconds;
+    state = state.copyWith(elapsedSeconds: real);
+  }
 
   Future<Map<String, dynamic>> completeSession(
     String sessionId,
@@ -205,6 +219,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   }
 
   void _onHR(int bpm) {
+    _gps.setCurrentHR(bpm);
     state = state.copyWith(
       currentHR: bpm,
       hrMin: state.hrMin == null ? bpm : min(state.hrMin!, bpm),
@@ -235,11 +250,12 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     );
   }
 
-  // Detiene GPS y devuelve el track completo para subir al backend
+  // Detiene GPS, guarda el track en el estado y lo devuelve para subir al backend
   GpsTrack stopGPS() {
     _gpsSub?.cancel();
-    state = state.copyWith(gpsActive: false);
-    return _gps.stopTracking();
+    final track = _gps.stopTracking();
+    state = state.copyWith(gpsActive: false, completedTrack: track);
+    return track;
   }
 
   // Construye el payload de actuals incluyendo datos de sensores.

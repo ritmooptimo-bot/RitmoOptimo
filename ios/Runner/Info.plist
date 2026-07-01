@@ -47,6 +47,20 @@
 			</array>
 		</dict>
 	</dict>
+	<!-- Fix #1: Permisos de descripción obligatorios para iOS runtime -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>RitmoÓptimo necesita Bluetooth para conectar tu sensor de frecuencia cardíaca durante el entrenamiento.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>RitmoÓptimo registra tu ruta GPS durante la sesión de entrenamiento.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>RitmoÓptimo necesita tu ubicación en segundo plano para registrar el track GPS completo.</string>
+	<!-- Fix #1: Background modes — location (GPS), audio (TTS/beeps + keepalive), bluetooth-central (FC sensor) -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>audio</string>
+		<string>bluetooth-central</string>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

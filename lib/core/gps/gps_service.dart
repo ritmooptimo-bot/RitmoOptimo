@@ -41,6 +41,9 @@ class GpsPoint {
   final double speedMps;
   final double accuracy;
   final String timestamp;
+  final int? hr;
+  final int? cadence;   // pasos/min (carrera) o rpm (ciclismo), de BLE o podómetro
+  final int? powerW;    // vatios, de potenciómetro BLE (ciclismo/carrera)
 
   const GpsPoint({
     required this.lat,
@@ -49,15 +52,21 @@ class GpsPoint {
     required this.speedMps,
     required this.accuracy,
     required this.timestamp,
+    this.hr,
+    this.cadence,
+    this.powerW,
   });
 
   Map<String, dynamic> toJson() => {
-        'lat': lat,
-        'lng': lng,
-        'alt': alt,
+        'lat':       lat,
+        'lng':       lng,
+        'alt':       alt,
         'speed_mps': speedMps,
-        'accuracy': accuracy,
+        'accuracy':  accuracy,
         'timestamp': timestamp,
+        if (hr      != null) 'hr':      hr,
+        if (cadence != null) 'cadence': cadence,
+        if (powerW  != null) 'power_w': powerW,
       };
 }
 
@@ -65,11 +74,13 @@ class GpsTrack {
   final List<GpsPoint> points;
   final double totalDistanceM;
   final int durationSec;
+  final String sportType;   // 'running' | 'cycling' | 'trail' | 'swimming' | 'other'
 
   const GpsTrack({
     required this.points,
     required this.totalDistanceM,
     required this.durationSec,
+    this.sportType = 'running',
   });
 
   double get avgPaceSecKm {
@@ -78,12 +89,13 @@ class GpsTrack {
     return avgSpeedMps > 0 ? 1000 / avgSpeedMps : 0;
   }
 
-  // Payload exacto que espera POST /sessions/:id/gps-track
+  // Payload para POST /sessions/:id/gps-track
   Map<String, dynamic> toBackendPayload() => {
-        'track_points': points.map((p) => p.toJson()).toList(),
+        'track_points':      points.map((p) => p.toJson()).toList(),
         'total_distance_km': totalDistanceM / 1000,
         'total_duration_sec': durationSec,
-        'avg_pace_sec_km': avgPaceSecKm,
+        'avg_pace_sec_km':   avgPaceSecKm,
+        'sport_type':        sportType,
       };
 }
 
@@ -94,9 +106,29 @@ class GpsService {
   double _totalDistanceM = 0;
   DateTime? _startTime;
   DateTime? _lastPointTime;
+  int? _currentHR;
+  int? _currentCadence;
+  int? _currentPowerW;
+  String _sportType = 'running';
+
+  // Fix #4: buffer de últimas 5 velocidades para suavizar ritmo en intervalos cortos
+  final List<double> _speedBuffer = [];
 
   // Distancia acumulada en tiempo real para mostrar en UI
   double get totalDistanceM => _totalDistanceM;
+
+  // Ritmo suavizado (media móvil 5 puntos) — usar en IntervalRepWidget
+  double get smoothedPaceSecKm {
+    if (_speedBuffer.isEmpty) return 0;
+    final avg = _speedBuffer.reduce((a, b) => a + b) / _speedBuffer.length;
+    return avg > 0.3 ? 1000 / avg : 0; // 0.3 m/s = ~55 min/km — umbral mínimo
+  }
+
+  // Actualizados por el workout provider / BLE service cuando llegan datos
+  void setCurrentHR(int? hr)       => _currentHR       = hr;
+  void setCurrentCadence(int? cad) => _currentCadence  = cad;
+  void setCurrentPower(int? watts)  => _currentPowerW   = watts;
+  void setSportType(String sport)   => _sportType       = sport;
 
   final _pointController = StreamController<GpsPoint>.broadcast();
   Stream<GpsPoint> get locationStream => _pointController.stream;
@@ -120,6 +152,7 @@ class GpsService {
     _lastPosition = null;
     _lastPointTime = null;
     _startTime = DateTime.now();
+    _speedBuffer.clear(); // Fix #4: resetear buffer al iniciar
 
     _sub = Geolocator.getPositionStream(
       locationSettings: _buildLocationSettings(),
@@ -143,6 +176,11 @@ class GpsService {
     }
     _lastPosition = pos;
 
+    // Fix #4: actualizar buffer de velocidad (últimos 5 puntos)
+    final spd = pos.speed < 0 ? 0.0 : pos.speed;
+    _speedBuffer.add(spd);
+    if (_speedBuffer.length > 5) _speedBuffer.removeAt(0);
+
     // Guardar punto si han pasado al menos 5 s desde el último (evita duplicados
     // cuando coinciden el stream y el intervalo de 10 s)
     final timeSinceLast = _lastPointTime != null
@@ -152,12 +190,15 @@ class GpsService {
     _lastPointTime = now;
 
     final point = GpsPoint(
-      lat: pos.latitude,
-      lng: pos.longitude,
-      alt: pos.altitude,
-      speedMps: pos.speed < 0 ? 0 : pos.speed,
-      accuracy: pos.accuracy,
+      lat:       pos.latitude,
+      lng:       pos.longitude,
+      alt:       pos.altitude,
+      speedMps:  pos.speed < 0 ? 0 : pos.speed,
+      accuracy:  pos.accuracy,
       timestamp: pos.timestamp.toIso8601String(),
+      hr:        _currentHR,
+      cadence:   _currentCadence,
+      powerW:    _currentPowerW,
     );
     _points.add(point);
     _pointController.add(point);
@@ -170,9 +211,10 @@ class GpsService {
         ? DateTime.now().difference(_startTime!).inSeconds
         : 0;
     return GpsTrack(
-      points: List.unmodifiable(_points),
+      points:        List.unmodifiable(_points),
       totalDistanceM: _totalDistanceM,
-      durationSec: durationSec,
+      durationSec:   durationSec,
+      sportType:     _sportType,
     );
   }
 
