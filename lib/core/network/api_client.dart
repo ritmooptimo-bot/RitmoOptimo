@@ -87,15 +87,23 @@ class ApiClient {
   Future<bool> hasToken() async =>
       (await _storage.read(key: _kTokenKey)) != null;
 
+  // Fecha local YYYY-MM-DD, independiente del timezone del servidor
+  static String _localDate() {
+    final n = DateTime.now();
+    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+  }
+
   // ── Athlete Dashboard (P0) ───────────────────────────────────
   Future<Map<String, dynamic>> getDashboard() async {
-    final r = await _dio.get('/athlete/dashboard');
+    final r = await _dio.get('/athlete/dashboard',
+        queryParameters: {'date': _localDate()});
     return r.data as Map<String, dynamic>;
   }
 
   // ── Week Plan (P0) ───────────────────────────────────────────
   Future<Map<String, dynamic>> getWeekPlan() async {
-    final r = await _dio.get('/athlete/week');
+    final r = await _dio.get('/athlete/week',
+        queryParameters: {'date': _localDate()});
     return r.data as Map<String, dynamic>;
   }
 
@@ -162,6 +170,25 @@ class ApiClient {
     Map<String, dynamic> trackData,
   ) async {
     final r = await _dio.post('/sessions/$sessionId/gps-track', data: trackData);
+    return r.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>?> getGPSTrack(String sessionId) async {
+    try {
+      final r = await _dio.get('/sessions/$sessionId/gps-track');
+      return r.data as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── History ──────────────────────────────────────────────────
+  Future<Map<String, dynamic>> getHistory({
+    required int year,
+    required int month,
+  }) async {
+    final r = await _dio.get('/athlete/history',
+        queryParameters: {'year': year, 'month': month});
     return r.data as Map<String, dynamic>;
   }
 
