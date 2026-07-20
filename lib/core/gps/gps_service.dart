@@ -183,6 +183,24 @@ class GpsService {
     _startTime = DateTime.now();
     _speedBuffer.clear(); // Fix #4: resetear buffer al iniciar
 
+    // PRIMERA LECTURA INMEDIATA.
+    //
+    // getPositionStream con distanceFilter: 5 no emite NADA mientras el atleta
+    // está quieto — y al empezar siempre lo está: colocándose la banda, atándose
+    // las zapatillas, mirando el móvil. La pantalla decía "Buscando señal GPS…"
+    // con el GPS perfectamente fijado (Google Maps lo mostraba sin problema en
+    // el mismo teléfono, 20/07). Pedimos una posición ya para que se vea que hay
+    // señal, se centre el mapa y aparezca la precisión real desde el segundo uno.
+    Geolocator.getLastKnownPosition().then((p) {
+      if (p != null && _sub != null && _lastAccuracyM == null) _onPosition(p);
+    }).catchError((_) {});
+    Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+      timeLimit: const Duration(seconds: 25),
+    ).then((p) {
+      if (_sub != null) _onPosition(p);
+    }).catchError((_) {/* sin fix aún: el stream lo dará cuando llegue */});
+
     _sub = Geolocator.getPositionStream(
       locationSettings: _buildLocationSettings(),
     ).listen(
