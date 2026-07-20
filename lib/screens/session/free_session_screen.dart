@@ -196,6 +196,6 @@ class _FreeSessionScreenState extends ConsumerState<FreeSessionScreen> {
         Sport.ciclismo => 'Velocidad km/h, distancia y recorrido',
         Sport.natacion => 'Ritmo /100 m y metros',
         Sport.fuerza   => 'Tiempo y pulso (sin GPS)',
-        Sport.otro     => 'Tiempo y distancia',
+        Sport.otro     => 'Caminata o marcha: ritmo, distancia y recorrido',
       };
 }

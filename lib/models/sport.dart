@@ -56,7 +56,7 @@ enum Sport {
         Sport.ciclismo => 'Ciclismo',
         Sport.natacion => 'Natación',
         Sport.fuerza   => 'Fuerza',
-        Sport.otro     => 'Otro',
+        Sport.otro     => 'Caminata',
       };
 
   IconData get icon => switch (this) {
@@ -65,7 +65,7 @@ enum Sport {
         Sport.ciclismo => Icons.directions_bike,
         Sport.natacion => Icons.pool,
         Sport.fuerza   => Icons.fitness_center,
-        Sport.otro     => Icons.sports,
+        Sport.otro     => Icons.directions_walk,
       };
 
   /// ¿Tiene sentido grabar recorrido? En un gimnasio no, y en una piscina el GPS
@@ -156,14 +156,18 @@ enum Sport {
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
-  /// Las cinco especialidades de la casa, en el orden en que se ofrecen para un
-  /// entrenamiento libre. 'otro' no se ofrece: no vamos a abrir el catálogo entero.
+  /// Lo que se ofrece para un entrenamiento libre: las cinco especialidades de la
+  /// casa más la caminata. No abrimos el catálogo entero — 'otro' es la caminata
+  /// o la marcha, que comparte métricas con la carrera (ritmo, distancia, mapa)
+  /// pero NO es correr: mezclarlas falsearía su ritmo medio y lo que le diga el
+  /// agente ("hiciste una carrera a 11:30/km" cuando fue un paseo).
   static const List<Sport> especialidades = [
     Sport.running,
     Sport.trail,
     Sport.ciclismo,
     Sport.fuerza,
     Sport.natacion,
+    Sport.otro,
   ];
 }
 
