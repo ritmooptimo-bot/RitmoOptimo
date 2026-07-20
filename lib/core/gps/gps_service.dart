@@ -123,6 +123,11 @@ class GpsService {
   // pantalla lo enseña en vez de dejar al atleta mirando un mapa vacío.
   double? _lastAccuracyM;
   int _descartados = 0;
+  // Diagnostico de la cadena GPS (ver GPSDIAG en logcat)
+  int _recibidos = 0, _aceptados = 0, _guardados = 0, _tiradosPrecision = 0, _tiradosTiempo = 0;
+  int _delStream = 0, _delVigilante = 0;
+  Timer? _vigilante;
+  DateTime? _ultimaLectura;
   final _accuracyController = StreamController<double>.broadcast();
   Position? _lastPosition;
   double _totalDistanceM = 0;
@@ -191,36 +196,82 @@ class GpsService {
     // con el GPS perfectamente fijado (Google Maps lo mostraba sin problema en
     // el mismo teléfono, 20/07). Pedimos una posición ya para que se vea que hay
     // señal, se centre el mapa y aparezca la precisión real desde el segundo uno.
+    print('GPSDIAG === startTracking: pidiendo posiciones ===');
     Geolocator.getLastKnownPosition().then((p) {
+      print('GPSDIAG lastKnown = ${p == null ? "NULL" : "acc ${p.accuracy.toStringAsFixed(0)}m"}');
       if (p != null && _sub != null && _lastAccuracyM == null) _onPosition(p);
     }).catchError((_) {});
     Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
       timeLimit: const Duration(seconds: 25),
     ).then((p) {
+      print('GPSDIAG getCurrentPosition OK acc=${p.accuracy.toStringAsFixed(0)}m');
       if (_sub != null) _onPosition(p);
-    }).catchError((_) {/* sin fix aún: el stream lo dará cuando llegue */});
+    }).catchError((Object e) {
+      print('GPSDIAG getCurrentPosition FALLO: $e');
+    });
+
+    // ── VIGILANTE DE POSICIONES ─────────────────────────────────────────────
+    //
+    // Medido en la caminata del 20/07 (3 min andando, móvil en la mano, fix de
+    // 15 m): getPositionStream entregó CERO posiciones. Ni un error, ni un
+    // cierre — silencio. Mientras tanto getCurrentPosition devolvía la posición
+    // sin problema, y Google Maps seguía al atleta en el mismo teléfono.
+    //
+    // No dependemos de que ese flujo funcione: si pasan más de 12 s sin lectura,
+    // se pide la posición explícitamente. El stream sigue conectado y, si
+    // despierta, sus puntos entran igual (se registra cuántos vienen de cada
+    // sitio). Un entrenamiento no se puede perder porque un canal se calle.
+    _ultimaLectura = DateTime.now();
+    _vigilante?.cancel();
+    // Cada 3 s mira si hace más de 7 que no llega nada. Con la latencia de la
+    // petición (~1,5 s) sale un punto cada ~9 s: la cadencia que se buscaba con
+    // intervalDuration, suficiente para trazar un recorrido decente andando o
+    // corriendo sin castigar la batería.
+    _vigilante = Timer.periodic(const Duration(seconds: 3), (_) {
+      final desde = DateTime.now().difference(_ultimaLectura ?? DateTime.now()).inSeconds;
+      if (desde < 7) return;
+      Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 20),
+      ).then((p) {
+        _delVigilante++;
+        print('GPSDIAG [vigilante] posicion pedida a mano (stream mudo ${desde}s)');
+        _onPosition(p);
+      }).catchError((Object e) {
+        print('GPSDIAG [vigilante] fallo al pedir posicion: $e');
+      });
+    });
 
     _sub = Geolocator.getPositionStream(
       locationSettings: _buildLocationSettings(),
     ).listen(
-      _onPosition,
+      (p) { _delStream++; _onPosition(p); },
       // v7.2: sin esto, un error del stream (servicio apagado a mitad, permiso
       // revocado, excepcion del foreground service) mataba el GPS EN SILENCIO:
       // el 18/07 el atleta corrio 81 min y se grabaron 0 puntos sin ningun aviso.
-      onError: (Object e) => _pointController.addError(e),
+      onError: (Object e) {
+        print('GPSDIAG !!! EL STREAM HA FALLADO: $e');
+        _pointController.addError(e);
+      },
+      onDone: () => print('GPSDIAG !!! EL STREAM SE HA CERRADO'),
     );
   }
 
   void _onPosition(Position pos) {
+    _recibidos++;
+    _ultimaLectura = DateTime.now();
     // La precisión de la ÚLTIMA lectura, se acepte o no: la pantalla la enseña
     // para que "no hay recorrido" deje de ser un misterio.
     _lastAccuracyM = pos.accuracy;
     _descartados = pos.accuracy > _kMaxAccuracyM ? _descartados + 1 : 0;
     if (pos.accuracy > _kMaxAccuracyM) {
+      _tiradosPrecision++;
+      print('GPSDIAG rx=$_recibidos TIRADO precision=${pos.accuracy.toStringAsFixed(0)}m (max $_kMaxAccuracyM)');
       _accuracyController.add(pos.accuracy);
       return;
     }
+    _aceptados++;
 
     final now = DateTime.now();
 
@@ -237,7 +288,16 @@ class GpsService {
       final dtSec = _lastPointTime != null
           ? now.difference(_lastPointTime!).inMilliseconds / 1000.0
           : 10.0;
-      if (dtSec <= 0 || d / dtSec <= _kMaxSpeedMps) _totalDistanceM += d;
+      final vel = dtSec > 0 ? d / dtSec : 0;
+      final suma = dtSec <= 0 || vel <= _kMaxSpeedMps;
+      if (suma) _totalDistanceM += d;
+      print('GPSDIAG rx=$_recibidos acc=${pos.accuracy.toStringAsFixed(0)}m '
+            'salto=${d.toStringAsFixed(1)}m dt=${dtSec.toStringAsFixed(1)}s '
+            'vel=${vel.toStringAsFixed(1)}m/s ${suma ? "SUMA" : "DESCARTA(salto)"} '
+            'total=${_totalDistanceM.toStringAsFixed(1)}m');
+    } else {
+      print('GPSDIAG rx=$_recibidos PRIMERA acc=${pos.accuracy.toStringAsFixed(0)}m '
+            'lat=${pos.latitude.toStringAsFixed(5)} lng=${pos.longitude.toStringAsFixed(5)}');
     }
     _lastPosition = pos;
     _accuracyController.add(pos.accuracy);
@@ -252,7 +312,11 @@ class GpsService {
     final timeSinceLast = _lastPointTime != null
         ? now.difference(_lastPointTime!).inSeconds
         : 999;
-    if (timeSinceLast < 5) return;
+    if (timeSinceLast < 5) {
+      _tiradosTiempo++;
+      print('GPSDIAG rx=$_recibidos punto NO guardado (solo ${timeSinceLast}s desde el anterior)');
+      return;
+    }
     _lastPointTime = now;
 
     final point = GpsPoint(
@@ -267,10 +331,18 @@ class GpsService {
       powerW:    _currentPowerW,
     );
     _points.add(point);
+    _guardados++;
+    print('GPSDIAG PUNTO GUARDADO #$_guardados  total=${_points.length} puntos, '
+          '${_totalDistanceM.toStringAsFixed(1)}m  hr=${_currentHR ?? "-"}');
     _pointController.add(point);
   }
 
   GpsTrack stopTracking() {
+    print('GPSDIAG === stopTracking: recibidas=$_recibidos (stream=$_delStream vigilante=$_delVigilante) '
+          'aceptadas=$_aceptados guardadas=$_guardados tiradas(precision)=$_tiradosPrecision '
+          'tiradas(tiempo)=$_tiradosTiempo total=${_totalDistanceM.toStringAsFixed(1)}m ===');
+    _vigilante?.cancel();
+    _vigilante = null;
     _sub?.cancel();
     _sub = null;
     final durationSec = _startTime != null
@@ -285,6 +357,7 @@ class GpsService {
   }
 
   void dispose() {
+    _vigilante?.cancel();
     _sub?.cancel();
     _pointController.close();
   }
