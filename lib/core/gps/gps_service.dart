@@ -18,7 +18,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 //
 // 75 m es tosco pero traza el recorrido de una carrera o una caminata. La
 // alternativa no era "un track más preciso": era NINGÚN track.
+// Techo ABSOLUTO: por encima de esto la lectura es basura y no cuenta ni para no
+// perder el entrenamiento. 75 m traza una caminata; más es ruido.
 const _kMaxAccuracyM = 75.0;
+
+// Precisión FINA para el trazado. Medido en la vuelta a la manzana del 20/07:
+// los "picos fuera de ruta" que veía el atleta eran lecturas de 38-50 m. Un punto
+// así se guarda igual (mejor un track tosco que ninguno) pero NO desplaza el
+// recorrido si ya tenemos uno bueno: se mantiene la última posición fiable y así
+// la línea no pega el salto. Con <25 m el trazado sigue la acera de verdad.
+const _kAccuracyFinaM = 25.0;
 
 // Por encima de esto la distancia entre dos puntos seguidos no es movimiento,
 // es el GPS saltando (con ±48 m de error, dos lecturas quietas pueden "separarse"
@@ -27,7 +36,7 @@ const _kMaxSpeedMps = 12.0;   // 43 km/h — imposible andando o corriendo
 
 // FIX 2: Intervalo de actualización forzada cada 10 s aunque no haya movimiento.
 //         Evita quedarse sin puntos en tramos lentos o paradas breves.
-const _kIntervalDuration = Duration(seconds: 10);
+const _kIntervalDuration = Duration(seconds: 2);
 
 // FIX 3: Servicio en primer plano en Android → Android no mata el GPS en background.
 //         Requiere la declaración del service en AndroidManifest.xml.
@@ -230,7 +239,7 @@ class GpsService {
     // corriendo sin castigar la batería.
     _vigilante = Timer.periodic(const Duration(seconds: 3), (_) {
       final desde = DateTime.now().difference(_ultimaLectura ?? DateTime.now()).inSeconds;
-      if (desde < 7) return;
+      if (desde < 10) return;  // el stream vive; solo cubrir huecos reales
       Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
         timeLimit: const Duration(seconds: 20),
@@ -275,31 +284,43 @@ class GpsService {
 
     final now = DateTime.now();
 
-    // Calcular distancia incremental con haversine
+    // ¿Es un PICO? Un salto imposible andando/corriendo casi siempre es una
+    // lectura mala que "teletransporta" el punto y luego vuelve. No debe ni sumar
+    // distancia ni dibujarse: es justo el pico fuera de ruta que se veía.
+    bool esPico = false;
     if (_lastPosition != null) {
       const dist = Distance();
-      final d = dist.as(
-        LengthUnit.Meter,
+      final d = dist.as(LengthUnit.Meter,
         LatLng(_lastPosition!.latitude, _lastPosition!.longitude),
-        LatLng(pos.latitude, pos.longitude),
-      );
-      // Solo suma si el desplazamiento es físicamente posible: con ±48 m de
-      // error dos lecturas quietas pueden "separarse" y regalar kilómetros.
+        LatLng(pos.latitude, pos.longitude));
       final dtSec = _lastPointTime != null
           ? now.difference(_lastPointTime!).inMilliseconds / 1000.0
           : 10.0;
-      final vel = dtSec > 0 ? d / dtSec : 0;
-      final suma = dtSec <= 0 || vel <= _kMaxSpeedMps;
-      if (suma) _totalDistanceM += d;
+      final vel = dtSec > 0 ? d / dtSec : 0.0;
+      esPico = dtSec > 0 && vel > _kMaxSpeedMps;
+      if (esPico) {
+        // No mueve el recorrido: se conserva la última posición BUENA como
+        // referencia, para que el siguiente punto se mida desde donde de verdad
+        // estábamos y la línea no dé el latigazo de ida y vuelta.
+        print('GPSDIAG rx=$_recibidos PICO IGNORADO salto=${d.toStringAsFixed(0)}m '
+              'vel=${vel.toStringAsFixed(1)}m/s acc=${pos.accuracy.toStringAsFixed(0)}m');
+        _accuracyController.add(pos.accuracy);
+        return;
+      }
+      _totalDistanceM += d;
       print('GPSDIAG rx=$_recibidos acc=${pos.accuracy.toStringAsFixed(0)}m '
             'salto=${d.toStringAsFixed(1)}m dt=${dtSec.toStringAsFixed(1)}s '
-            'vel=${vel.toStringAsFixed(1)}m/s ${suma ? "SUMA" : "DESCARTA(salto)"} '
-            'total=${_totalDistanceM.toStringAsFixed(1)}m');
+            'vel=${vel.toStringAsFixed(1)}m/s total=${_totalDistanceM.toStringAsFixed(1)}m');
     } else {
       print('GPSDIAG rx=$_recibidos PRIMERA acc=${pos.accuracy.toStringAsFixed(0)}m '
             'lat=${pos.latitude.toStringAsFixed(5)} lng=${pos.longitude.toStringAsFixed(5)}');
     }
-    _lastPosition = pos;
+    // La "última posición buena" solo avanza con lecturas finas. Con una lectura
+    // regular (>25 m) sumamos su distancia pero NO la tomamos de ancla: así un
+    // punto flojo no se convierte en el origen del salto del siguiente.
+    if (pos.accuracy <= _kAccuracyFinaM || _lastPosition == null) {
+      _lastPosition = pos;
+    }
     _accuracyController.add(pos.accuracy);
 
     // Fix #4: actualizar buffer de velocidad (últimos 5 puntos)
@@ -307,12 +328,12 @@ class GpsService {
     _speedBuffer.add(spd);
     if (_speedBuffer.length > 5) _speedBuffer.removeAt(0);
 
-    // Guardar punto si han pasado al menos 5 s desde el último (evita duplicados
-    // cuando coinciden el stream y el intervalo de 10 s)
+    // Un punto cada 3 s: más densidad traza mejor las curvas de una manzana.
+    // (evita duplicados cuando coinciden el stream y el intervalo)
     final timeSinceLast = _lastPointTime != null
         ? now.difference(_lastPointTime!).inSeconds
         : 999;
-    if (timeSinceLast < 5) {
+    if (timeSinceLast < 3) {
       _tiradosTiempo++;
       print('GPSDIAG rx=$_recibidos punto NO guardado (solo ${timeSinceLast}s desde el anterior)');
       return;
