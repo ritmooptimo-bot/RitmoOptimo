@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/skin_provider.dart';
 import '../../models/sport.dart';
+import '../../core/network/api_client.dart';
+import '../../core/network/pending_tracks.dart';
 import '../../providers/workout_provider.dart';
 import '../../config/skins/skin_config.dart';
 
@@ -17,6 +19,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Recorridos que no se pudieron subir en su momento (sin cobertura, servidor
+    // caído): suben solos ahora. El entrenamiento del atleta no se pierde nunca.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      PendingTracks.reintentarTodo(ref.read(apiClientProvider))
+          .then((n) { if (n > 0) debugPrint('[PendingTracks] $n recorrido(s) subido(s) al abrir'); });
+    });
     Future.microtask(
       () => ref.read(dashboardProvider.notifier).load(),
     );

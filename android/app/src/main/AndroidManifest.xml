@@ -15,6 +15,11 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <!-- Sin esto el servicio de ubicacion lanza SecurityException al abrir el
+         canal de posiciones (enableWakeLock: true) y getPositionStream no
+         entrega NADA, en silencio. Medido el 20/07: 3 min andando, 0 lecturas.
+         Tambien evita que el movil suspenda el GPS con la pantalla apagada. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- Fix #11: Permite TTS en background en Android 14+ sin que el sistema lo silencie -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
 

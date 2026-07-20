@@ -6,6 +6,7 @@ import '../../providers/workout_provider.dart';
 import '../../config/router.dart';
 import '../../core/gps/gps_service.dart';
 import '../../core/network/api_client.dart';
+import '../../core/network/pending_tracks.dart';
 import '../../widgets/route_map_widget.dart';
 import 'hr_recovery_screen.dart';
 
@@ -97,6 +98,15 @@ class _SessionCompleteScreenState
       // "guardado" sin recorrido — perdida invisible. Ahora se reintenta y, si no
       // hay manera, el atleta DECIDE (reintentar o guardar sin recorrido).
       var trackSubido = !(_gpsTrack != null && _gpsTrack!.points.length >= 2);
+      // EL RECORRIDO SE ESCRIBE EN EL MÓVIL ANTES DE INTENTAR SUBIRLO.
+      //
+      // El 20/07 un atleta caminó 562 m, el servidor devolvió un 500 y al salir
+      // de esta pantalla el recorrido se perdió entero: vivía solo en memoria.
+      // Ahora se queda en el teléfono hasta que el servidor confirme que lo
+      // tiene, y se reintenta solo al abrir la app.
+      if (!trackSubido) {
+        await PendingTracks.guardar(widget.sessionId, _gpsTrack!.toBackendPayload());
+      }
       var intentos = 0;
       while (!trackSubido && intentos < 3) {
         intentos++;
@@ -106,6 +116,7 @@ class _SessionCompleteScreenState
             _gpsTrack!.toBackendPayload(),
           );
           trackSubido = true;
+          await PendingTracks.borrar(widget.sessionId);   // confirmado por el servidor
         } catch (_) {
           if (!mounted) break;
           final reintentar = await showDialog<bool>(
@@ -114,12 +125,14 @@ class _SessionCompleteScreenState
             builder: (ctx) => AlertDialog(
               title: const Text('No se pudo subir el recorrido'),
               content: const Text(
-                  'Comprueba tu conexión. Tus kilómetros y ritmos se perderán '
-                  'si guardas sin recorrido.'),
+                  'No he podido subir el recorrido ahora mismo.\n\n'
+                  'Tranquilo: se ha guardado en el móvil y lo subiré solo la '
+                  'próxima vez que abras la app con conexión. No vas a perder '
+                  'tus kilómetros.'),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Guardar sin recorrido'),
+                  child: const Text('Continuar'),
                 ),
                 ElevatedButton(
                   onPressed: () => Navigator.pop(ctx, true),
