@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -45,9 +46,36 @@ class _FreeSessionScreenState extends ConsumerState<FreeSessionScreen> {
       if (!mounted) return;
       setState(() {
         _creando = false;
-        _error = 'No he podido crear el entrenamiento. Revisa la conexión.';
+        // "Revisa la conexión" era mentira cuando el servidor SÍ respondía (un
+        // 400, un 409, un 500…). Se dice lo que ha pasado de verdad: sin esto,
+        // diagnosticar un fallo en la calle es imposible.
+        _error = _explicar(e);
       });
     }
+  }
+
+  String _explicar(Object e) {
+    if (e is DioException) {
+      final code = e.response?.statusCode;
+      final data = e.response?.data;
+      final msg = data is Map ? (data['error'] ?? data['message']) : null;
+      if (code != null) {
+        return msg != null
+            ? 'El servidor ha rechazado la petición (HTTP $code):\n$msg'
+            : 'El servidor ha rechazado la petición (HTTP $code).';
+      }
+      switch (e.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.sendTimeout:
+        case DioExceptionType.receiveTimeout:
+          return 'El servidor no responde (tiempo agotado). Reinténtalo.';
+        case DioExceptionType.connectionError:
+          return 'Sin conexión con el servidor. Revisa los datos o la wifi.';
+        default:
+          return 'Error de red: ${e.message ?? e.type.name}';
+      }
+    }
+    return 'No he podido crear el entrenamiento: $e';
   }
 
   @override
