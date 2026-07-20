@@ -219,25 +219,12 @@ class _SessionTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(
-                          _fmtDate(date),
-                          style:
-                              TextStyle(color: skin.textMuted, fontSize: 12),
-                        ),
-                        if (rawMin != null) ...[
-                          Text(
-                            '  ·  ',
-                            style: TextStyle(color: skin.textMuted, fontSize: 12),
-                          ),
-                          Text(
-                            _fmtDuration(rawMin),
-                            style: TextStyle(
-                                color: skin.textMuted, fontSize: 12),
-                          ),
-                        ],
-                      ],
+                    Text(
+                      rawMin != null
+                          ? '${_fmtDate(date)}  ·  ${_fmtDuration(rawMin)}'
+                          : _fmtDate(date),
+                      style: TextStyle(color: skin.textMuted, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),

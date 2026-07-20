@@ -45,3 +45,10 @@ macos/Flutter/ephemeral/
 *.jks
 google-services.json
 GoogleService-Info.plist
+
+# Gestor local de versiones de Flutter (Puro) — es de esta máquina, no del proyecto
+.puro.json
+
+# Escritorio: generado por 'flutter create' pero la app no se distribuye en Windows.
+# Si algún día se targetea, se regenera con: flutter create --platforms=windows .
+windows/

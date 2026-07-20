@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/network/app_auth_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/skin_provider.dart';
 
@@ -69,6 +70,76 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: const Text('Activar'),
           ),
         ],
+      ),
+    ).then((_) => ctrl.dispose());
+  }
+
+  void _showForgotPasswordDialog(BuildContext context, dynamic skin) {
+    final ctrl = TextEditingController(text: _emailCtrl.text.trim());
+    bool sending = false;
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDlg) => AlertDialog(
+          backgroundColor: skin.backgroundCard,
+          title: Text('Recuperar contraseña',
+              style: TextStyle(color: skin.textPrimary, fontSize: 16)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Te enviaremos un email con el enlace para crear una nueva contraseña.',
+                style: TextStyle(color: skin.textMuted, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                keyboardType: TextInputType.emailAddress,
+                style: TextStyle(color: skin.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'tu@email.com',
+                  hintStyle: TextStyle(color: skin.textMuted, fontSize: 13),
+                  filled: true,
+                  fillColor: skin.background,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: sending ? null : () => Navigator.of(context).pop(),
+              child: Text('Cancelar', style: TextStyle(color: skin.textMuted)),
+            ),
+            ElevatedButton(
+              onPressed: sending
+                  ? null
+                  : () async {
+                      final email = ctrl.text.trim().toLowerCase();
+                      if (email.isEmpty || !email.contains('@')) return;
+                      setDlg(() => sending = true);
+                      try {
+                        await AppAuthClient().requestPasswordReset(email);
+                      } catch (_) {/* respuesta neutra igualmente */}
+                      if (context.mounted) {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Si el email existe, te llegará un enlace para crear tu contraseña. Revisa también el spam.'),
+                            duration: Duration(seconds: 5),
+                          ),
+                        );
+                      }
+                    },
+              child: sending
+                  ? const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Enviar enlace'),
+            ),
+          ],
+        ),
       ),
     ).then((_) => ctrl.dispose());
   }
@@ -220,6 +291,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   onPressed: () => _showActivationDialog(context, skin),
                   child: Text(
                     '¿Primer acceso? Introduce tu código de activación',
+                    style: TextStyle(color: skin.textMuted, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+
+              // Recuperación de contraseña (envía email con /reset-password)
+              Center(
+                child: TextButton(
+                  onPressed: () => _showForgotPasswordDialog(context, skin),
+                  child: Text(
+                    '¿Olvidaste tu contraseña?',
                     style: TextStyle(color: skin.textMuted, fontSize: 12),
                     textAlign: TextAlign.center,
                   ),

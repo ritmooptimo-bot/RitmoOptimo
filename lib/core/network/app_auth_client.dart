@@ -49,6 +49,18 @@ class AppAuthClient {
     return data;
   }
 
+  // ── Olvidé mi contraseña ──────────────────────────────────────
+  /// Pide al backend el email con el enlace para crear una nueva
+  /// contraseña (página /reset-password). Respuesta siempre neutra
+  /// (no revela si el email existe).
+  Future<void> requestPasswordReset(String email) async {
+    await _dio.post(
+      'https://ritmooptimo.tech/api/auth/reset-password',
+      data: {'email': email},
+      options: Options(headers: {'Content-Type': 'application/json'}),
+    );
+  }
+
   // ── Login con validación de dispositivo ──────────────────────
   Future<Map<String, dynamic>> loginWithDevice({
     required String email,

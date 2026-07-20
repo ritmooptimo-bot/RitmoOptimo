@@ -309,9 +309,12 @@ class _HRVCard extends StatelessWidget {
               Row(children: [
                 const Text('💓', style: TextStyle(fontSize: 18)),
                 const SizedBox(width: 8),
-                Text('HRV matutino (opcional)',
-                    style: TextStyle(
-                        color: skin.textPrimary, fontWeight: FontWeight.w600)),
+                Flexible(
+                  child: Text('HRV matutino (opcional)',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: skin.textPrimary, fontWeight: FontWeight.w600)),
+                ),
               ]),
               const SizedBox(height: 12),
               Row(children: [

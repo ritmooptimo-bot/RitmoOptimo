@@ -196,9 +196,12 @@ class _RestRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 4),
-        Text(
-          'Serie ${uiState.currentRep + 1}/${uiState.totalReps}',
-          style: TextStyle(color: skin.textMuted, fontSize: 11),
+        Flexible(
+          child: Text(
+            'Serie ${uiState.currentRep + 1}/${uiState.totalReps}',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: skin.textMuted, fontSize: 11),
+          ),
         ),
       ],
     );
