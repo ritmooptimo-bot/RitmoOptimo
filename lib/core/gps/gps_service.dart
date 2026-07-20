@@ -38,13 +38,28 @@ const _kMaxSpeedMps = 12.0;   // 43 km/h — imposible andando o corriendo
 //         Evita quedarse sin puntos en tramos lentos o paradas breves.
 const _kIntervalDuration = Duration(seconds: 2);
 
-// FIX 3: Servicio en primer plano en Android → Android no mata el GPS en background.
-//         Requiere la declaración del service en AndroidManifest.xml.
+// La CONFIGURACIÓN del flujo continuo, afinada para tracking deportivo:
+//
+//  · accuracy: best — máxima precisión del hardware (high se queda en ~10 m;
+//    best exprime lo que dé el chip). Es lo que usa una app de running.
+//
+//  · distanceFilter: 0 — LA PALANCA CLAVE. Con 5 m, el flujo solo emitía si
+//    detectaba 5 m de movimiento; andando despacio con ruido GPS ese umbral no
+//    se superaba y el flujo se CALLABA (35 de 67 lecturas en la vuelta a la
+//    manzana del 20/07 — el resto las tuvo que pedir el vigilante a mano). Con
+//    0, el flujo emite por TIEMPO, constante, sin depender de cuánto te muevas.
+//    El _onPosition ya poda por precisión, por picos y guarda 1 punto cada 3 s,
+//    así que no llena de puntos redundantes: el filtrado está aguas abajo.
+//
+//  · intervalDuration: 2 s — el ritmo objetivo del flujo.
+//
+// Requiere el servicio en primer plano (AndroidManifest) para que Android no
+// mate el GPS con la pantalla apagada.
 LocationSettings _buildLocationSettings() {
   if (Platform.isAndroid) {
     return AndroidSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 5,
+      accuracy: LocationAccuracy.best,
+      distanceFilter: 0,
       intervalDuration: _kIntervalDuration,
       foregroundNotificationConfig: const ForegroundNotificationConfig(
         notificationTitle: 'GPS activo',
@@ -53,10 +68,10 @@ LocationSettings _buildLocationSettings() {
       ),
     );
   }
-  // iOS — no necesita foreground service (el sistema lo gestiona distinto)
+  // iOS — el sistema gestiona el background distinto; best + navegación a pie.
   return const LocationSettings(
-    accuracy: LocationAccuracy.high,
-    distanceFilter: 5,
+    accuracy: LocationAccuracy.best,
+    distanceFilter: 0,
   );
 }
 
