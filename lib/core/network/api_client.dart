@@ -142,6 +142,16 @@ class ApiClient {
     return r.data as Map<String, dynamic>;
   }
 
+  // ── Entrenamiento libre — el atleta entrena algo fuera del plan ──
+  // Crea la sesion en el servidor (deporte incluido) y la devuelve ya empezada.
+  Future<Map<String, dynamic>> createFreeSession(String sport, {String? title}) async {
+    final r = await _dio.post('/athlete/free-session', data: {
+      'sport': sport,
+      if (title != null && title.isNotEmpty) 'title': title,
+    });
+    return r.data as Map<String, dynamic>;
+  }
+
   // ── Session Start (P1) ───────────────────────────────────────
   Future<Map<String, dynamic>> startSession(String sessionId) async {
     final r = await _dio.post('/sessions/$sessionId/start');

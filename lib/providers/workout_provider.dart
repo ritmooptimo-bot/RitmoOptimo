@@ -174,6 +174,12 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     }
   }
 
+  /// Siembra en el estado una sesion LIBRE recien creada por el servidor, para
+  /// que la pantalla de sesion ya sepa el deporte antes del primer fetch.
+  void setFreeSession(Map<String, dynamic> session) {
+    state = state.copyWith(session: session);
+  }
+
   Future<void> startSession(String sessionId) async {
     final result = await _api.startSession(sessionId);
     state = state.copyWith(

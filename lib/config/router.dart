@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/session/session_screen.dart';
+import '../screens/session/free_session_screen.dart';
 import '../screens/session/session_complete_screen.dart';
 import '../screens/plan/week_plan_screen.dart';
 import '../screens/wellness/wellness_screen.dart';
@@ -11,18 +12,25 @@ import '../screens/profile/profile_screen.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/auth/pairing_screen.dart';
 import '../screens/session/ble_scan_screen.dart';
+import '../screens/history/history_screen.dart';
+import '../screens/session/session_summary_screen.dart';
+import '../screens/chat/chat_screen.dart';
 
 // ── Routes ────────────────────────────────────────────────────────
 abstract class AppRoutes {
-  static const login           = '/login';
-  static const home            = '/';
-  static const weekPlan        = '/plan';
-  static const session         = '/session/:id';
-  static const sessionComplete = '/session/:id/complete';
-  static const wellness        = '/wellness';
-  static const profile         = '/profile';
-  static const pair            = '/pair';          // ritmooptimo://pair?token=XXX
-  static const bleScan         = '/ble-scan/:sessionId';
+  static const login            = '/login';
+  static const home             = '/';
+  static const weekPlan         = '/plan';
+  static const session          = '/session/:id';
+  static const sessionComplete  = '/session/:id/complete';
+  static const sessionSummary   = '/session/:id/summary';
+  static const wellness         = '/wellness';
+  static const profile          = '/profile';
+  static const pair             = '/pair';          // ritmooptimo://pair?token=XXX
+  static const history          = '/history';
+  static const bleScan          = '/ble-scan/:sessionId';
+  static const chat             = '/chat';
+  static const freeSession      = '/free-session';   // entrenamiento fuera del plan
 }
 
 // ── Router ────────────────────────────────────────────────────────
@@ -82,6 +90,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: AppRoutes.profile,
             builder: (_, __) => const ProfileScreen(),
           ),
+          GoRoute(
+            path: AppRoutes.history,
+            builder: (_, __) => const HistoryScreen(),
+          ),
         ],
       ),
 
@@ -98,6 +110,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           sessionId: state.pathParameters['id']!,
         ),
       ),
+      GoRoute(
+        path: AppRoutes.sessionSummary,
+        builder: (_, state) => SessionSummaryScreen(
+          sessionId: state.pathParameters['id']!,
+        ),
+      ),
 
       // ── BLE Scan (full screen, fuera del shell) ──────────────
       GoRoute(
@@ -106,6 +124,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => BleScanScreen(
           sessionId: state.pathParameters['sessionId']!,
         ),
+      ),
+
+      // ── Entrenamiento libre (full screen) ────────────────────
+      GoRoute(
+        path: AppRoutes.freeSession,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (_, __) => const FreeSessionScreen(),
+      ),
+
+      // ── Chat con el equipo (full screen) ─────────────────────
+      GoRoute(
+        path: AppRoutes.chat,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (_, __) => const ChatScreen(),
       ),
     ],
   );
@@ -124,6 +156,7 @@ class _AppShell extends ConsumerWidget {
     if (loc == AppRoutes.weekPlan) return 1;
     if (loc == AppRoutes.wellness) return 2;
     if (loc == AppRoutes.profile)  return 3;
+    if (loc == AppRoutes.history)  return 4;
     return 0;
   }
 
@@ -141,6 +174,7 @@ class _AppShell extends ConsumerWidget {
             case 1: context.go(AppRoutes.weekPlan);
             case 2: context.go(AppRoutes.wellness);
             case 3: context.go(AppRoutes.profile);
+            case 4: context.go(AppRoutes.history);
           }
         },
         items: const [
@@ -148,6 +182,7 @@ class _AppShell extends ConsumerWidget {
           BottomNavigationBarItem(icon: Icon(Icons.calendar_today_outlined), activeIcon: Icon(Icons.calendar_today), label: 'Plan'),
           BottomNavigationBarItem(icon: Icon(Icons.favorite_outline),   activeIcon: Icon(Icons.favorite),       label: 'Bienestar'),
           BottomNavigationBarItem(icon: Icon(Icons.person_outline),     activeIcon: Icon(Icons.person),         label: 'Perfil'),
+          BottomNavigationBarItem(icon: Icon(Icons.history_outlined),   activeIcon: Icon(Icons.history),        label: 'Historial'),
         ],
       ),
     );

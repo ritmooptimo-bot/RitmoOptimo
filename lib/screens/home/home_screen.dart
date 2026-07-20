@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/skin_provider.dart';
+import '../../models/sport.dart';
 import '../../providers/workout_provider.dart';
 import '../../config/skins/skin_config.dart';
 
@@ -28,6 +29,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       backgroundColor: skin.background,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => context.push('/chat'),
+        backgroundColor: skin.accent,
+        foregroundColor: skin.background,
+        tooltip: 'Chat con tu equipo',
+        child: const Icon(Icons.chat_bubble_outline),
+      ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () => ref.read(dashboardProvider.notifier).load(),
@@ -102,16 +110,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: _FitnessCard(skin: skin, fitness: dashboard.fitness!),
                   ),
 
+                // ── Progreso del mes ────────────────────────
+                if (dashboard.sessionStats != null)
+                  SliverToBoxAdapter(
+                    child: _MonthProgressCard(
+                      skin: skin,
+                      stats: dashboard.sessionStats!,
+                    ),
+                  ),
+
                 // ── Sesión de hoy ───────────────────────────
                 SliverToBoxAdapter(
                   child: _TodaySessionCard(
                     skin: skin,
                     session: dashboard.todaySession,
-                    onStart: dashboard.todaySession != null
-                        ? () => context.push(
-                            '/session/${dashboard.todaySession!['id']}')
+                    onTap: dashboard.todaySession != null
+                        ? () {
+                            final id     = dashboard.todaySession!['id'] as String?;
+                            final status = dashboard.todaySession!['status'] as String? ?? '';
+                            if (id == null) return;
+                            if (status == 'completed' || status == 'missed') {
+                              context.push('/session/$id/summary');
+                            } else {
+                              context.push('/session/$id');
+                            }
+                          }
                         : null,
                   ),
+                ),
+
+                // ── Entrenar por mi cuenta ──────────────────
+                SliverToBoxAdapter(
+                  child: _FreeTrainingButton(skin: skin),
                 ),
 
                 // ── Bienestar ───────────────────────────────
@@ -319,16 +349,37 @@ class _Metric extends StatelessWidget {
   }
 }
 
-// ── Today Session Card ───────────────────────────────────────────
-class _TodaySessionCard extends StatelessWidget {
+// ── Month Progress Card ──────────────────────────────────────────
+class _MonthProgressCard extends StatelessWidget {
   final SkinConfig skin;
-  final Map<String, dynamic>? session;
-  final VoidCallback? onStart;
-  const _TodaySessionCard(
-      {required this.skin, this.session, this.onStart});
+  final Map<String, dynamic> stats;
+  const _MonthProgressCard({required this.skin, required this.stats});
+
+  static String _motivationalText(double pct) {
+    if (pct >= 1.0)  return '¡Meta conseguida este mes! 🏆';
+    if (pct >= 0.75) return '¡Último empujón, casi lo tienes!';
+    if (pct >= 0.5)  return '¡Más de la mitad, no pares!';
+    if (pct >= 0.25) return '¡Buen ritmo, sigue así!';
+    return '¡El camino empieza aquí!';
+  }
+
+  static Color _progressColor(double pct, SkinConfig skin) {
+    if (pct >= 1.0)  return skin.success;
+    if (pct >= 0.75) return const Color(0xFF22C55E);
+    if (pct >= 0.5)  return skin.accent;
+    if (pct >= 0.25) return skin.warning;
+    return skin.accentSecondary;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final completed = num.tryParse(stats['completed_count']?.toString() ?? '')?.toInt() ?? 0;
+    final planned   = num.tryParse(stats['planned_count']?.toString()   ?? '')?.toInt() ?? 0;
+    final km        = num.tryParse(stats['total_distance_km']?.toString() ?? '')?.toDouble() ?? 0.0;
+    final pct       = planned > 0 ? (completed / planned).clamp(0.0, 1.0) : 0.0;
+    final color     = _progressColor(pct, skin);
+    final isComplete = pct >= 1.0;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Container(
@@ -336,38 +387,252 @@ class _TodaySessionCard extends StatelessWidget {
           color: skin.backgroundCard,
           borderRadius: BorderRadius.circular(skin.cardRadius),
           border: Border.all(
-            color: session != null ? skin.accent.withValues(alpha: 0.6) : skin.border,
-            width: session != null ? 1.5 : 1,
+            color: isComplete
+                ? skin.success.withValues(alpha: 0.6)
+                : skin.border,
+            width: isComplete ? 1.5 : 1,
           ),
-          boxShadow: session != null ? [
+          boxShadow: isComplete ? [
             BoxShadow(
-              color: skin.accent.withValues(alpha: 0.12),
+              color: skin.success.withValues(alpha: 0.15),
               blurRadius: 16,
-              spreadRadius: 0,
-            )
+            ),
           ] : null,
         ),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (session != null)
-              Container(
-                height: 3,
-                decoration: BoxDecoration(
-                  color: skin.accent,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(skin.cardRadius),
-                    topRight: Radius.circular(skin.cardRadius),
+            // Cabecera
+            Row(
+              children: [
+                Text(
+                  'PROGRESO DEL MES',
+                  style: TextStyle(
+                    color: skin.textMuted,
+                    fontSize: 10,
+                    letterSpacing: 1.5,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
+                const Spacer(),
+                if (isComplete)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: skin.success.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '¡Completado!',
+                      style: TextStyle(
+                        color: skin.success,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Métricas principales
+            Row(
+              children: [
+                // Sesiones
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '$completed',
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 32,
+                              fontWeight: FontWeight.w800,
+                              height: 1,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              '/ $planned',
+                              style: TextStyle(
+                                color: skin.textMuted,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'completadas',
+                        style: TextStyle(color: skin.textMuted, fontSize: 11),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Divisor
+                Container(
+                  width: 1,
+                  height: 44,
+                  color: skin.border,
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+
+                // Kilómetros — Expanded para equilibrar con sesiones
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            km >= 1000
+                                ? '${(km / 1000).toStringAsFixed(1)}k'
+                                : km.toStringAsFixed(1),
+                            style: TextStyle(
+                              color: skin.accentSecondary,
+                              fontSize: 32,
+                              fontWeight: FontWeight.w800,
+                              height: 1,
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              'km',
+                              style: TextStyle(
+                                color: skin.textMuted,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'km recorridos',
+                        style: TextStyle(color: skin.textMuted, fontSize: 11),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            // Barra de progreso
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: pct,
+                minHeight: 7,
+                backgroundColor: skin.border.withValues(alpha: 0.5),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
               ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: session == null
-                  ? _EmptySession(skin: skin)
-                  : _SessionContent(skin: skin, session: session!, onStart: onStart),
+            ),
+
+            const SizedBox(height: 8),
+
+            // Porcentaje + mensaje motivacional
+            Row(
+              children: [
+                Text(
+                  '${(pct * 100).toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    _motivationalText(pct),
+                    style: TextStyle(
+                      color: skin.textSecondary,
+                      fontSize: 12,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Today Session Card ───────────────────────────────────────────
+class _TodaySessionCard extends StatelessWidget {
+  final SkinConfig skin;
+  final Map<String, dynamic>? session;
+  final VoidCallback? onTap;
+  const _TodaySessionCard(
+      {required this.skin, this.session, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(skin.cardRadius);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            color: skin.backgroundCard,
+            borderRadius: radius,
+            border: Border.all(
+              color: session != null ? skin.accent.withValues(alpha: 0.6) : skin.border,
+              width: session != null ? 1.5 : 1,
+            ),
+            boxShadow: session != null ? [
+              BoxShadow(
+                color: skin.accent.withValues(alpha: 0.12),
+                blurRadius: 16,
+                spreadRadius: 0,
+              )
+            ] : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (session != null)
+                Container(
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: skin.accent,
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(skin.cardRadius),
+                      topRight: Radius.circular(skin.cardRadius),
+                    ),
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: session == null
+                    ? _EmptySession(skin: skin)
+                    : _SessionContent(skin: skin, session: session!, onStart: onTap),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -404,27 +669,8 @@ class _SessionContent extends StatelessWidget {
   final VoidCallback? onStart;
   const _SessionContent({required this.skin, required this.session, this.onStart});
 
-  static String _sportLabel(String? raw) {
-    if (raw == null || raw.isEmpty) return 'Entrenamiento';
-    switch (raw.toLowerCase()) {
-      case 'running': case 'carrera': return 'Carrera';
-      case 'cycling': case 'bici':    return 'Ciclismo';
-      case 'swimming':                return 'Natación';
-      case 'strength': case 'fuerza': return 'Fuerza';
-      case 'base':                    return 'Rodaje base';
-      case 'recovery': case 'recuperacion': return 'Recuperación';
-      default: return raw[0].toUpperCase() + raw.substring(1);
-    }
-  }
-
-  static IconData _sportIcon(String? raw) {
-    switch (raw?.toLowerCase()) {
-      case 'cycling': case 'bici': return Icons.directions_bike;
-      case 'swimming':             return Icons.pool;
-      case 'strength': case 'fuerza': return Icons.fitness_center;
-      default:                     return Icons.directions_run;
-    }
-  }
+  static String  _sportLabel(String? raw) => Sport.fromApi(raw).label;
+  static IconData _sportIcon(String? raw)  => Sport.fromApi(raw).icon;
 
   @override
   Widget build(BuildContext context) {
@@ -512,7 +758,7 @@ class _SessionContent extends StatelessWidget {
             ),
           ],
         ),
-        if (status == 'pending' || status == 'scheduled' || status == 'approved') ...[
+        if (status != 'completed' && status != 'in_progress' && status != 'missed') ...[
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
@@ -535,6 +781,61 @@ class _SessionContent extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+// ── Entrenar por mi cuenta ───────────────────────────────────────
+// Si hoy no le apetece lo planificado o simplemente sale a hacer otra cosa, que
+// pueda registrarlo. Un entreno sin registrar es un entreno que el entrenador no
+// puede tener en cuenta.
+class _FreeTrainingButton extends StatelessWidget {
+  final SkinConfig skin;
+  const _FreeTrainingButton({required this.skin});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+      child: InkWell(
+        onTap: () => context.push('/free-session'),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: skin.backgroundCard,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: skin.border),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.add_circle_outline, color: skin.accent, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Entrenar por mi cuenta',
+                      style: TextStyle(
+                        color: skin.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Carrera, trail, bici, fuerza o natación',
+                      style: TextStyle(color: skin.textMuted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: skin.textMuted, size: 20),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -11,6 +11,7 @@ import '../../config/skins/skin_config.dart';
 import '../../core/network/api_client.dart';
 import '../../core/ble/ble_service.dart';
 import '../../core/gps/gps_service.dart';
+import '../../models/sport.dart';
 import '../../core/audio/audio_cue_service.dart';
 import '../../core/audio/session_audio_controller.dart';
 import 'block_progress_widget.dart';
@@ -33,6 +34,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   StreamSubscription<GpsPoint>? _gpsMapSub;
   bool _mapReady = false;
   bool _gpsOff = false;          // v7.2: sin GPS confirmado → banner rojo permanente
+  bool _sinGpsPorDeporte = false; // fuerza o piscina: no hay recorrido que grabar (y está bien)
   // Audio-Guided Session (AGS)
   final AudioCueService _audioCueService = AudioCueService();
   SessionAudioController? _audioController;
@@ -104,11 +106,45 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       await _openBleScan();
     }
 
-    // 2. GPS — pedir permiso y empezar track.
+    // 2. GPS — pero solo si el DEPORTE lo pide.
+    //    En fuerza no hay recorrido, y en una piscina el GPS solo graba ruido: pedir
+    //    permiso de ubicación ahí es molestar al cliente para nada.
+    final sport = Sport.fromApi(
+        ref.read(activeSessionProvider).session?['sport'] as String?);
+    gps.setSportType(sport.gpsSportType);
+
+    var quiereGps = sport.usesGps;
+    if (quiereGps && sport.askPoolOrOpenWater && mounted) {
+      final donde = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('¿Dónde nadas?'),
+          content: const Text(
+              'En piscina el GPS no sirve (graba un garabato). En aguas abiertas '
+              'sí registra tu recorrido.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'piscina'),
+              child: const Text('Piscina'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, 'abiertas'),
+              child: const Text('Aguas abiertas'),
+            ),
+          ],
+        ),
+      );
+      quiereGps = donde == 'abiertas';
+    }
+    if (!quiereGps) {
+      _sinGpsPorDeporte = true;   // no es un fallo: este deporte no lleva recorrido
+    }
+
     // v7.2: si no hay GPS se AVISA y se pregunta — nunca arrancar mudos. El 18/07
     // el atleta corrio 81 min creyendo que se grababa el recorrido: 0 puntos.
-    var gpsOk = await gps.requestPermission();
-    if (!gpsOk && mounted) {
+    var gpsOk = quiereGps && await gps.requestPermission();
+    if (!gpsOk && quiereGps && mounted) {
       final eleccion = await showDialog<String>(
         context: context,
         barrierDismissible: false,
@@ -413,6 +449,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             session: session,
             elapsed: _formatTime(session.elapsedSeconds),
             isCompleted: isCompleted,
+            sport: Sport.fromApi(session.session?['sport'] as String?),
           ),
 
           // ── Banner "Completada" con datos reales ──────────
@@ -423,7 +460,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
           if (!isCompleted) ...[
             _SensorStatusRow(skin: skin, session: session, onConnectBle: _openBleScan),
             const SizedBox(height: 8),
-            if (session.isRunning) ...[
+            // Sin GPS no hay mapa: en fuerza o en piscina ocupaba 230 px en blanco.
+            if (session.isRunning && !_sinGpsPorDeporte) ...[
               const Divider(height: 1, thickness: 0.5),
               SizedBox(height: 230, child: _buildLiveMap(skin)),
             ],
@@ -458,7 +496,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   style: TextStyle(color: Color(0xFFFCA5A5), fontSize: 13,
                       fontWeight: FontWeight.w700)),
             )
-          else if (_timer != null && _mapPoints.isEmpty)
+          else if (_timer != null && _mapPoints.isEmpty && !_sinGpsPorDeporte)
             Container(
               width: double.infinity,
               margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
@@ -479,6 +517,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               planned: session.session?['planned_structure'] as List<dynamic>? ?? [],
               elapsed: session.elapsedSeconds,
               skin: skin,
+              esLibre: session.session?['is_free_session'] == true,
             ),
           ),
 
@@ -548,9 +587,10 @@ class _SessionHeader extends StatelessWidget {
   final ActiveSessionState session;
   final String elapsed;
   final bool isCompleted;
+  final Sport sport;
   const _SessionHeader(
       {required this.skin, required this.session, required this.elapsed,
-       this.isCompleted = false});
+       this.isCompleted = false, this.sport = Sport.running});
 
   @override
   Widget build(BuildContext context) {
@@ -574,6 +614,8 @@ class _SessionHeader extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 16),
+          // Cada deporte, sus métricas: min/km en carrera, km/h en bici, /100m
+          // nadando, y en fuerza ni ritmo ni distancia — pulso y tiempo.
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -587,28 +629,50 @@ class _SessionHeader extends StatelessWidget {
                 color: skin.error,
                 skin: skin,
               ),
-              const SizedBox(width: 32),
-              _DataBadge(
-                label: 'RITMO',
-                value: session.currentPace != null && session.currentPace! > 0
-                    ? _formatPace(session.currentPace!)
-                    : '--:--',
-                unit: '/km',
-                icon: Icons.speed,
-                color: skin.accent,
-                skin: skin,
-              ),
-              const SizedBox(width: 32),
-              _DataBadge(
-                label: 'DIST',
-                value: session.totalDistanceM > 0
-                    ? (session.totalDistanceM / 1000).toStringAsFixed(2)
-                    : '0.00',
-                unit: 'km',
-                icon: Icons.route,
-                color: skin.accentSecondary,
-                skin: skin,
-              ),
+              if (sport.speedMode != SpeedMode.none) ...[
+                const SizedBox(width: 32),
+                _DataBadge(
+                  label: sport.speedLabel,
+                  value: sport.formatSpeed(session.currentPace),
+                  unit: sport.speedUnit,
+                  icon: Icons.speed,
+                  color: skin.accent,
+                  skin: skin,
+                ),
+              ],
+              if (sport.hasDistance) ...[
+                const SizedBox(width: 32),
+                _DataBadge(
+                  label: 'DIST',
+                  value: sport.formatDistance(session.totalDistanceM),
+                  unit: sport.distanceUnit,
+                  icon: Icons.route,
+                  color: skin.accentSecondary,
+                  skin: skin,
+                ),
+              ],
+              // En fuerza el hueco de ritmo/distancia lo ocupa lo que sí importa:
+              // cómo ha ido el pulso durante la sesión.
+              if (sport == Sport.fuerza) ...[
+                const SizedBox(width: 32),
+                _DataBadge(
+                  label: 'MEDIA',
+                  value: session.hrAvg != null ? '${session.hrAvg}' : '--',
+                  unit: 'bpm',
+                  icon: Icons.monitor_heart_outlined,
+                  color: skin.accent,
+                  skin: skin,
+                ),
+                const SizedBox(width: 32),
+                _DataBadge(
+                  label: 'MÁX',
+                  value: session.hrMax != null ? '${session.hrMax}' : '--',
+                  unit: 'bpm',
+                  icon: Icons.arrow_upward,
+                  color: skin.accentSecondary,
+                  skin: skin,
+                ),
+              ],
             ],
           ),
         ],
@@ -616,11 +680,6 @@ class _SessionHeader extends StatelessWidget {
     );
   }
 
-  String _formatPace(double secPerKm) {
-    final m = secPerKm ~/ 60;
-    final s = (secPerKm % 60).round();
-    return '$m:${s.toString().padLeft(2, '0')}';
-  }
 }
 
 // ── Sensor status row (BLE + GPS) — siempre visible ─────────────
@@ -790,8 +849,10 @@ class _SessionBlocks extends StatelessWidget {
   final List<dynamic> planned;
   final int elapsed;
   final dynamic skin;
+  final bool esLibre;
   const _SessionBlocks(
-      {required this.planned, required this.elapsed, required this.skin});
+      {required this.planned, required this.elapsed, required this.skin,
+       this.esLibre = false});
 
   static num _blockDurMin(Map<String, dynamic> b) {
     final v = b['min'] ?? b['durationMin'] ?? b['duracion_min'] ?? b['duration_min'] ?? b['dur_min'] ?? 0;
@@ -815,7 +876,10 @@ class _SessionBlocks extends StatelessWidget {
     if (planned.isEmpty) {
       return Center(
         child: Text(
-          'No hay bloques definidos para esta sesión.',
+          // En una sesión libre no faltan bloques: es que no los lleva.
+          esLibre
+              ? 'Entrenamiento libre — tú marcas el ritmo.'
+              : 'No hay bloques definidos para esta sesión.',
           style: TextStyle(color: skin.textMuted, fontSize: 13),
           textAlign: TextAlign.center,
         ),
