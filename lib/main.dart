@@ -1,3 +1,4 @@
+import 'core/network/api_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,6 +43,13 @@ class _RitmoOptimoAppState extends ConsumerState<RitmoOptimoApp> {
 
   void _initDeepLinks() {
     _appLinks = AppLinks();
+
+    // v7.2: sesion perdida sin remedio (401 + refresh fallido) → a login con
+    // mensaje humano, nunca el DioException crudo en pantalla.
+    ApiClient.onAuthLost = () {
+      final router = ref.read(routerProvider);
+      router.go(AppRoutes.login);
+    };
 
     // Esperar al primer frame para que GoRouter esté montado
     WidgetsBinding.instance.addPostFrameCallback((_) {

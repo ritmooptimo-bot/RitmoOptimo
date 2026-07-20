@@ -32,6 +32,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   late final MapController _mapController;
   StreamSubscription<GpsPoint>? _gpsMapSub;
   bool _mapReady = false;
+  bool _gpsOff = false;          // v7.2: sin GPS confirmado → banner rojo permanente
   // Audio-Guided Session (AGS)
   final AudioCueService _audioCueService = AudioCueService();
   SessionAudioController? _audioController;
@@ -103,8 +104,39 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       await _openBleScan();
     }
 
-    // 2. GPS — pedir permiso y empezar track
-    final gpsOk = await gps.requestPermission();
+    // 2. GPS — pedir permiso y empezar track.
+    // v7.2: si no hay GPS se AVISA y se pregunta — nunca arrancar mudos. El 18/07
+    // el atleta corrio 81 min creyendo que se grababa el recorrido: 0 puntos.
+    var gpsOk = await gps.requestPermission();
+    if (!gpsOk && mounted) {
+      final eleccion = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Sin ubicación'),
+          content: const Text(
+              'No puedo grabar tu recorrido: la ubicación del teléfono está '
+              'desactivada o sin permiso.\n\nActívala y pulsa Reintentar para '
+              'registrar kilómetros y ritmos.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'sin_gps'),
+              child: const Text('Entrenar sin GPS'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, 'reintentar'),
+              child: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      );
+      if (eleccion == 'reintentar') {
+        gpsOk = await gps.requestPermission();
+      }
+      if (!gpsOk) {
+        _gpsOff = true;   // banner rojo: que se VEA que no hay recorrido
+      }
+    }
     if (gpsOk) {
       notifier.startGPS();
       _gpsMapSub?.cancel();
@@ -115,6 +147,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
           try { _mapController.move(LatLng(point.lat, point.lng), 16); }
           catch (_) {}
         }
+      }, onError: (Object e) {
+        // El stream ha muerto (servicio apagado, permiso revocado…): avisar YA.
+        if (!mounted) return;
+        setState(() => _gpsOff = true);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('⚠️ Señal GPS perdida — el recorrido ha dejado de grabarse'),
+          duration: Duration(seconds: 6),
+        ));
       });
     }
 
@@ -402,6 +442,36 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 ),
             ],
           ],
+
+          // ── Estado del GPS: visible SIEMPRE (v7.2) ───────
+          if (_gpsOff)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF450A0A),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFEF4444)),
+              ),
+              child: const Text('🛰️ SIN GPS — el recorrido NO se está grabando',
+                  style: TextStyle(color: Color(0xFFFCA5A5), fontSize: 13,
+                      fontWeight: FontWeight.w700)),
+            )
+          else if (_timer != null && _mapPoints.isEmpty)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF3A2E10),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFF59E0B)),
+              ),
+              child: const Text('🛰️ Buscando señal GPS… (sal a cielo abierto)',
+                  style: TextStyle(color: Color(0xFFFCD34D), fontSize: 13,
+                      fontWeight: FontWeight.w600)),
+            ),
 
           // ── Bloques del plan ─────────────────────────────
           Expanded(
@@ -938,21 +1008,30 @@ class _CompletedSummaryBanner extends StatelessWidget {
           Row(children: [
             Icon(Icons.check_circle, color: skin.success, size: 16),
             const SizedBox(width: 8),
-            Text('Sesión completada${completedLabel != null ? " · $completedLabel" : ""}',
-                style: TextStyle(color: skin.success, fontWeight: FontWeight.w700, fontSize: 13)),
+            Flexible(
+              child: Text(
+                'Sesión completada${completedLabel != null ? " · $completedLabel" : ""}',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: skin.success, fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+            ),
           ]),
           if (actualMin != null || actualDistM != null || actualHr != null) ...[
             const SizedBox(height: 10),
-            Row(children: [
-              if (actualMin != null)
-                _SummaryChip(label: '${actualMin} min', icon: Icons.timer_outlined, skin: skin),
-              if (actualDistM != null && actualDistM > 0)
-                _SummaryChip(
-                    label: '${(actualDistM / 1000).toStringAsFixed(2)} km',
-                    icon: Icons.route_outlined, skin: skin),
-              if (actualHr != null)
-                _SummaryChip(label: '$actualHr bpm', icon: Icons.favorite_outline, skin: skin),
-            ]),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                if (actualMin != null)
+                  _SummaryChip(label: '$actualMin min', icon: Icons.timer_outlined, skin: skin),
+                if (actualDistM != null && actualDistM > 0)
+                  _SummaryChip(
+                      label: '${(actualDistM / 1000).toStringAsFixed(2)} km',
+                      icon: Icons.route_outlined, skin: skin),
+                if (actualHr != null)
+                  _SummaryChip(label: '$actualHr bpm', icon: Icons.favorite_outline, skin: skin),
+              ],
+            ),
           ],
         ],
       ),

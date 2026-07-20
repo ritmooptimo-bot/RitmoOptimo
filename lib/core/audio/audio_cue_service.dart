@@ -24,7 +24,8 @@ class AudioCueService {
     if (_initialized) return;
 
     await _tts.setLanguage('es-ES');
-    await _tts.setSpeechRate(0.85);
+    // v7.2.1: el atleta reporto que la voz hablaba demasiado rapido (antes 0.85)
+    await _tts.setSpeechRate(0.42);
     await _tts.setVolume(1.0);
     await _tts.setPitch(1.0);
 

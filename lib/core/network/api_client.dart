@@ -2,10 +2,16 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'app_auth_client.dart';
+
 const _kTokenKey = 'ro_access_token'; // misma clave que AppAuthClient
 const _apiBase   = 'https://ritmooptimo.tech/api/training-plan';
 
 // ── Auth Interceptor ─────────────────────────────────────────────
+// v7.2: en 401 se intenta UNA renovacion con el refresh token y se reintenta la
+// peticion. Solo si la renovacion falla se limpia la sesion y se navega a login.
+// Antes: se borraba el token y se propagaba el DioException CRUDO a la pantalla
+// (el atleta amanecio con "status code of 401..." el 18/07).
 class _AuthInterceptor extends Interceptor {
   final FlutterSecureStorage _storage;
 
@@ -24,10 +30,21 @@ class _AuthInterceptor extends Interceptor {
   }
 
   @override
-  void onError(DioException err, ErrorInterceptorHandler handler) {
-    // Token expirado — la app debe navegar a login
-    if (err.response?.statusCode == 401) {
-      _storage.delete(key: _kTokenKey);
+  Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
+    if (err.response?.statusCode == 401 &&
+        err.requestOptions.extra['auth_retried'] != true) {
+      final renovado = await AppAuthClient().refreshSession();
+      if (renovado) {
+        try {
+          final opts = err.requestOptions;
+          opts.extra['auth_retried'] = true;
+          // fetch re-ejecuta los interceptores → onRequest relee el token nuevo
+          final r = await ApiClient._instanceDio!.fetch(opts);
+          return handler.resolve(r);
+        } catch (_) {/* cae al logout */}
+      }
+      await _storage.delete(key: _kTokenKey);
+      ApiClient.onAuthLost?.call();
     }
     handler.next(err);
   }
@@ -62,6 +79,11 @@ class ApiClient {
   late final Dio _dio;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
+  // Sesion perdida sin remedio (refresh fallido) → la app navega a login con un
+  // mensaje humano. Lo fija main.dart al arrancar.
+  static void Function()? onAuthLost;
+  static Dio? _instanceDio;
+
   ApiClient() {
     _dio = Dio(BaseOptions(
       baseUrl: _apiBase,
@@ -76,6 +98,7 @@ class ApiClient {
       _AuthInterceptor(_storage),
       _RetryInterceptor(_dio),
     ]);
+    ApiClient._instanceDio = _dio;
   }
 
   // ── Token management ─────────────────────────────────────────

@@ -156,7 +156,13 @@ class GpsService {
 
     _sub = Geolocator.getPositionStream(
       locationSettings: _buildLocationSettings(),
-    ).listen(_onPosition);
+    ).listen(
+      _onPosition,
+      // v7.2: sin esto, un error del stream (servicio apagado a mitad, permiso
+      // revocado, excepcion del foreground service) mataba el GPS EN SILENCIO:
+      // el 18/07 el atleta corrio 81 min y se grabaron 0 puntos sin ningun aviso.
+      onError: (Object e) => _pointController.addError(e),
+    );
   }
 
   void _onPosition(Position pos) {

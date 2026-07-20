@@ -92,14 +92,44 @@ class _SessionCompleteScreenState
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      // Subir track GPS si hay puntos (no bloqueante: error se silencia)
-      if (_gpsTrack != null && _gpsTrack!.points.length >= 2) {
+      // v7.2: la subida del track ya NO falla en silencio. Antes un catch vacio
+      // se tragaba el error, completeSession triunfaba y el entreno quedaba
+      // "guardado" sin recorrido — perdida invisible. Ahora se reintenta y, si no
+      // hay manera, el atleta DECIDE (reintentar o guardar sin recorrido).
+      var trackSubido = !(_gpsTrack != null && _gpsTrack!.points.length >= 2);
+      var intentos = 0;
+      while (!trackSubido && intentos < 3) {
+        intentos++;
         try {
           await ref.read(apiClientProvider).postGPSTrack(
             widget.sessionId,
             _gpsTrack!.toBackendPayload(),
           );
-        } catch (_) {}
+          trackSubido = true;
+        } catch (_) {
+          if (!mounted) break;
+          final reintentar = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => AlertDialog(
+              title: const Text('No se pudo subir el recorrido'),
+              content: const Text(
+                  'Comprueba tu conexión. Tus kilómetros y ritmos se perderán '
+                  'si guardas sin recorrido.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Guardar sin recorrido'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Reintentar'),
+                ),
+              ],
+            ),
+          );
+          if (reintentar != true) break;
+        }
       }
 
       await ref.read(activeSessionProvider.notifier).completeSession(
