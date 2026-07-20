@@ -35,6 +35,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   bool _mapReady = false;
   bool _gpsOff = false;          // v7.2: sin GPS confirmado → banner rojo permanente
   bool _sinGpsPorDeporte = false; // fuerza o piscina: no hay recorrido que grabar (y está bien)
+  double? _precisionM;            // precisión de la última lectura GPS (metros)
+  StreamSubscription<double>? _precSub;
   // Audio-Guided Session (AGS)
   final AudioCueService _audioCueService = AudioCueService();
   SessionAudioController? _audioController;
@@ -68,6 +70,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   void dispose() {
     _timer?.cancel();
     _gpsMapSub?.cancel();
+    _precSub?.cancel();
     _audioCueService.dispose();
     super.dispose();
   }
@@ -175,6 +178,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     }
     if (gpsOk) {
       notifier.startGPS();
+      _precSub?.cancel();
+      _precSub = gps.accuracyStream.listen((m) {
+        if (mounted) setState(() => _precisionM = m);
+      });
       _gpsMapSub?.cancel();
       _gpsMapSub = gps.locationStream.listen((point) {
         if (!mounted) return;
@@ -506,8 +513,13 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: const Color(0xFFF59E0B)),
               ),
-              child: const Text('🛰️ Buscando señal GPS… (sal a cielo abierto)',
-                  style: TextStyle(color: Color(0xFFFCD34D), fontSize: 13,
+              // Decir la precision REAL: "Buscando senal" a secas escondia que el
+              // GPS iba bien y era la app la que descartaba los puntos.
+              child: Text(
+                  _precisionM == null
+                      ? '🛰️ Buscando señal GPS… (sal a cielo abierto)'
+                      : '🛰️ Señal débil: ±${_precisionM!.round()} m — buscando precisión…',
+                  style: const TextStyle(color: Color(0xFFFCD34D), fontSize: 13,
                       fontWeight: FontWeight.w600)),
             ),
 

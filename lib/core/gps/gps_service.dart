@@ -6,7 +6,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // FIX 1: Umbral de precisión más permisivo (20m → 35m).
 //         Con 20m se descartaban demasiados fixes en exterior con nubes o arboles.
-const _kMaxAccuracyM = 35.0;
+// PRECISIÓN MÍNIMA PARA ACEPTAR UN PUNTO.
+//
+// Estaba en 35 m y era la causa REAL de los entrenamientos sin recorrido.
+// Medido en el móvil del atleta el 20/07/2026 en plena calle:
+//     Location[gps hAcc=48.0 satellites=6 meanCn0=20]
+// El sistema entregaba posiciones (51 en 7 minutos, en alta precisión), pero
+// TODAS se descartaban aquí por 13 metros — sin avisar. La pantalla decía "GPS
+// Activo" mientras no se grababa absolutamente nada. Explica también los 81
+// minutos con 0 puntos del 18/07.
+//
+// 75 m es tosco pero traza el recorrido de una carrera o una caminata. La
+// alternativa no era "un track más preciso": era NINGÚN track.
+const _kMaxAccuracyM = 75.0;
+
+// Por encima de esto la distancia entre dos puntos seguidos no es movimiento,
+// es el GPS saltando (con ±48 m de error, dos lecturas quietas pueden "separarse"
+// decenas de metros e inflar los kilómetros).
+const _kMaxSpeedMps = 12.0;   // 43 km/h — imposible andando o corriendo
 
 // FIX 2: Intervalo de actualización forzada cada 10 s aunque no haya movimiento.
 //         Evita quedarse sin puntos en tramos lentos o paradas breves.
@@ -102,6 +119,11 @@ class GpsTrack {
 class GpsService {
   StreamSubscription<Position>? _sub;
   final List<GpsPoint> _points = [];
+  // Precisión de la última lectura y cuántas seguidas se han descartado: la
+  // pantalla lo enseña en vez de dejar al atleta mirando un mapa vacío.
+  double? _lastAccuracyM;
+  int _descartados = 0;
+  final _accuracyController = StreamController<double>.broadcast();
   Position? _lastPosition;
   double _totalDistanceM = 0;
   DateTime? _startTime;
@@ -129,6 +151,13 @@ class GpsService {
   void setCurrentCadence(int? cad) => _currentCadence  = cad;
   void setCurrentPower(int? watts)  => _currentPowerW   = watts;
   void setSportType(String sport)   => _sportType       = sport;
+
+  /// Precisión (en metros) de la última lectura recibida, se haya aceptado o no.
+  double? get lastAccuracyM => _lastAccuracyM;
+  /// Lecturas seguidas descartadas por precisión insuficiente.
+  int get descartadosSeguidos => _descartados;
+  /// Emite la precisión de cada lectura, para que la UI la muestre en vivo.
+  Stream<double> get accuracyStream => _accuracyController.stream;
 
   final _pointController = StreamController<GpsPoint>.broadcast();
   Stream<GpsPoint> get locationStream => _pointController.stream;
@@ -166,21 +195,34 @@ class GpsService {
   }
 
   void _onPosition(Position pos) {
-    // FIX 1: Umbral relajado a 35 m
-    if (pos.accuracy > _kMaxAccuracyM) return;
+    // La precisión de la ÚLTIMA lectura, se acepte o no: la pantalla la enseña
+    // para que "no hay recorrido" deje de ser un misterio.
+    _lastAccuracyM = pos.accuracy;
+    _descartados = pos.accuracy > _kMaxAccuracyM ? _descartados + 1 : 0;
+    if (pos.accuracy > _kMaxAccuracyM) {
+      _accuracyController.add(pos.accuracy);
+      return;
+    }
 
     final now = DateTime.now();
 
     // Calcular distancia incremental con haversine
     if (_lastPosition != null) {
       const dist = Distance();
-      _totalDistanceM += dist.as(
+      final d = dist.as(
         LengthUnit.Meter,
         LatLng(_lastPosition!.latitude, _lastPosition!.longitude),
         LatLng(pos.latitude, pos.longitude),
       );
+      // Solo suma si el desplazamiento es físicamente posible: con ±48 m de
+      // error dos lecturas quietas pueden "separarse" y regalar kilómetros.
+      final dtSec = _lastPointTime != null
+          ? now.difference(_lastPointTime!).inMilliseconds / 1000.0
+          : 10.0;
+      if (dtSec <= 0 || d / dtSec <= _kMaxSpeedMps) _totalDistanceM += d;
     }
     _lastPosition = pos;
+    _accuracyController.add(pos.accuracy);
 
     // Fix #4: actualizar buffer de velocidad (últimos 5 puntos)
     final spd = pos.speed < 0 ? 0.0 : pos.speed;
