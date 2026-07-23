@@ -10,6 +10,22 @@ import '../../models/sport.dart';
 import '../../config/skins/skin_config.dart';
 import '../../widgets/route_map_widget.dart';
 
+// pg devuelve las columnas `numeric` como STRING ("0.649"); estos parsers
+// aceptan num O String para que un `as num` no reviente el resumen. Bug real:
+// total_distance_km/elevation/training_load son numeric → llegaban como texto
+// y la pantalla de una sesión completada con GPS moría con "Error al cargar".
+double? _pd(dynamic v) {
+  if (v == null) return null;
+  if (v is num) return v.toDouble();
+  return double.tryParse(v.toString());
+}
+
+int? _pi(dynamic v) {
+  if (v == null) return null;
+  if (v is num) return v.toInt();
+  return num.tryParse(v.toString())?.toInt();
+}
+
 // ── Provider ─────────────────────────────────────────────────────
 final _summaryProvider = FutureProvider.family<_SummaryData, String>((ref, id) async {
   final api     = ref.read(apiClientProvider);
@@ -27,13 +43,13 @@ final _summaryProvider = FutureProvider.family<_SummaryData, String>((ref, id) a
   String? sportType;
 
   if (gpsRaw != null) {
-    distKm    = (gpsRaw['total_distance_km']    as num?)?.toDouble();
-    paceSecKm = (gpsRaw['avg_pace_sec_km']      as num?)?.toDouble();
-    elevGainM = (gpsRaw['elevation_gain_m']     as num?)?.toDouble();
-    elevLossM = (gpsRaw['elevation_loss_m']     as num?)?.toDouble();
-    trainingLoad   = (gpsRaw['training_load']        as num?)?.toDouble();
-    fastestKmPace  = (gpsRaw['fastest_km_pace_sec']  as num?)?.toInt();
-    cadenceAvg     = (gpsRaw['cadence_avg_rpm']      as num?)?.toInt();
+    distKm    = _pd(gpsRaw['total_distance_km']);
+    paceSecKm = _pd(gpsRaw['avg_pace_sec_km']);
+    elevGainM = _pd(gpsRaw['elevation_gain_m']);
+    elevLossM = _pd(gpsRaw['elevation_loss_m']);
+    trainingLoad   = _pd(gpsRaw['training_load']);
+    fastestKmPace  = _pi(gpsRaw['fastest_km_pace_sec']);
+    cadenceAvg     = _pi(gpsRaw['cadence_avg_rpm']);
     sportType      = gpsRaw['sport_type'] as String?;
 
     // Pace splits (server-computed)
@@ -41,10 +57,10 @@ final _summaryProvider = FutureProvider.family<_SummaryData, String>((ref, id) a
     paceSplits = rawSplits.map((s) {
       final m = s as Map;
       return _PaceSplit(
-        km:        (m['km']         as num).toInt(),
-        paceSec:   (m['pace_sec']   as num?)?.toInt() ?? 0,
-        hrAvg:     (m['hr_avg']     as num?)?.toInt() ?? 0,
-        elevationM: (m['elevation_m'] as num?)?.toInt(),
+        km:        _pi(m['km']) ?? 0,
+        paceSec:   _pi(m['pace_sec']) ?? 0,
+        hrAvg:     _pi(m['hr_avg']) ?? 0,
+        elevationM: _pi(m['elevation_m']),
       );
     }).where((s) => s.paceSec > 0).toList();
 
@@ -52,11 +68,11 @@ final _summaryProvider = FutureProvider.family<_SummaryData, String>((ref, id) a
     final rawZones = gpsRaw['hr_zones_sec'] as Map?;
     if (rawZones != null && rawZones.isNotEmpty) {
       serverHrZones = {
-        'Z1': ((rawZones['z1'] as num?) ?? 0).toInt(),
-        'Z2': ((rawZones['z2'] as num?) ?? 0).toInt(),
-        'Z3': ((rawZones['z3'] as num?) ?? 0).toInt(),
-        'Z4': ((rawZones['z4'] as num?) ?? 0).toInt(),
-        'Z5': ((rawZones['z5'] as num?) ?? 0).toInt(),
+        'Z1': _pi(rawZones['z1']) ?? 0,
+        'Z2': _pi(rawZones['z2']) ?? 0,
+        'Z3': _pi(rawZones['z3']) ?? 0,
+        'Z4': _pi(rawZones['z4']) ?? 0,
+        'Z5': _pi(rawZones['z5']) ?? 0,
       };
     }
 
@@ -65,15 +81,15 @@ final _summaryProvider = FutureProvider.family<_SummaryData, String>((ref, id) a
     gpsPoints = pts.map((p) {
       final m = p as Map;
       return GpsPoint(
-        lat:      (m['lat']       as num).toDouble(),
-        lng:      (m['lng']       as num).toDouble(),
-        alt:      (m['alt']       as num? ?? 0).toDouble(),
-        speedMps: (m['speed_mps'] as num? ?? 0).toDouble(),
-        accuracy: (m['accuracy']  as num? ?? 0).toDouble(),
+        lat:      _pd(m['lat']) ?? 0,
+        lng:      _pd(m['lng']) ?? 0,
+        alt:      _pd(m['alt']) ?? 0,
+        speedMps: _pd(m['speed_mps']) ?? 0,
+        accuracy: _pd(m['accuracy']) ?? 0,
         timestamp: m['timestamp'] as String? ?? '',
-        hr:       (m['hr']        as num?)?.toInt(),
-        cadence:  (m['cadence']   as num?)?.toInt(),
-        powerW:   (m['power_w']   as num?)?.toInt(),
+        hr:       _pi(m['hr']),
+        cadence:  _pi(m['cadence']),
+        powerW:   _pi(m['power_w']),
       );
     }).toList();
   }
@@ -171,16 +187,16 @@ class _SummaryBody extends StatelessWidget {
   const _SummaryBody({required this.skin, required this.data, required this.sessionId});
 
   // ── Helpers ──────────────────────────────────────────────────
-  int    get _durMin  => (data.session['actual_duration_min'] as num?)?.toInt() ?? 0;
-  int    get _hrAvg   => (data.session['actual_hr_avg_bpm']   as num?)?.toInt() ?? 0;
-  int    get _hrMax   => (data.session['actual_hr_max_bpm']   as num?)?.toInt() ?? 0;
-  int    get _rpe     => (data.session['actual_rpe']          as num?)?.toInt() ?? 0;
-  int    get _planMin => (data.session['planned_duration_min'] as num?)?.toInt() ?? 0;
-  int    get _planDistM => (data.session['planned_distance_m'] as num?)?.toInt() ?? 0;
+  int    get _durMin  => _pi(data.session['actual_duration_min']) ?? 0;
+  int    get _hrAvg   => _pi(data.session['actual_hr_avg_bpm'])   ?? 0;
+  int    get _hrMax   => _pi(data.session['actual_hr_max_bpm'])   ?? 0;
+  int    get _rpe     => _pi(data.session['actual_rpe'])          ?? 0;
+  int    get _planMin => _pi(data.session['planned_duration_min']) ?? 0;
+  int    get _planDistM => _pi(data.session['planned_distance_m']) ?? 0;
 
   double get _distKm {
     if (data.distKm != null && data.distKm! > 0) return data.distKm!;
-    final m = (data.session['actual_distance_m'] as num?)?.toDouble() ?? 0;
+    final m = _pd(data.session['actual_distance_m']) ?? 0;
     return m / 1000;
   }
 
@@ -282,7 +298,7 @@ class _SummaryBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final feedback   = data.session['athlete_feedback'] as Map? ?? {};
     final notes      = feedback['notes']         as String?;
-    final energy     = (feedback['energy_level'] as num?)?.toInt();
+    final energy     = _pi(feedback['energy_level']);
     final zones      = _zoneSeconds;
     final hasGPS     = data.gpsPoints.length >= 2;
     final hasSplits  = data.paceSplits.length >= 2;
