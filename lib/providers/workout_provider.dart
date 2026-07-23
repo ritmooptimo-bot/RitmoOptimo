@@ -8,39 +8,47 @@ import '../core/gps/gps_service.dart';
 
 // ── Dashboard State ──────────────────────────────────────────────
 class DashboardState {
+  final String? athleteName;
   final Map<String, dynamic>? todaySession;
   final Map<String, dynamic>? fitness;
   final int pendingAlerts;
   final Map<String, dynamic>? latestWellness;
   final Map<String, dynamic>? sessionStats;
+  final Map<String, dynamic>? monthProgress;
   final bool isLoading;
   final String? error;
 
   const DashboardState({
+    this.athleteName,
     this.todaySession,
     this.fitness,
     this.pendingAlerts = 0,
     this.latestWellness,
     this.sessionStats,
+    this.monthProgress,
     this.isLoading = false,
     this.error,
   });
 
   DashboardState copyWith({
+    String? athleteName,
     Map<String, dynamic>? todaySession,
     Map<String, dynamic>? fitness,
     int? pendingAlerts,
     Map<String, dynamic>? latestWellness,
     Map<String, dynamic>? sessionStats,
+    Map<String, dynamic>? monthProgress,
     bool? isLoading,
     String? error,
   }) =>
       DashboardState(
+        athleteName:    athleteName    ?? this.athleteName,
         todaySession:   todaySession   ?? this.todaySession,
         fitness:        fitness        ?? this.fitness,
         pendingAlerts:  pendingAlerts  ?? this.pendingAlerts,
         latestWellness: latestWellness ?? this.latestWellness,
         sessionStats:   sessionStats   ?? this.sessionStats,
+        monthProgress:  monthProgress  ?? this.monthProgress,
         isLoading:      isLoading      ?? this.isLoading,
         error:          error,
       );
@@ -56,11 +64,13 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
     try {
       final data = await _api.getDashboard();
       state = DashboardState(
+        athleteName:    data['athlete_name']   as String?,
         todaySession:   data['today_session']  as Map<String, dynamic>?,
         fitness:        data['fitness']        as Map<String, dynamic>?,
         pendingAlerts:  (data['pending_alerts'] as num?)?.toInt() ?? 0,
         latestWellness: data['latest_wellness'] as Map<String, dynamic>?,
         sessionStats:   data['session_stats']  as Map<String, dynamic>?,
+        monthProgress:  data['month_progress'] as Map<String, dynamic>?,
         isLoading:      false,
       );
     } catch (e) {

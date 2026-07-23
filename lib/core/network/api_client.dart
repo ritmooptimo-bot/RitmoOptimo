@@ -123,6 +123,13 @@ class ApiClient {
     return r.data as Map<String, dynamic>;
   }
 
+  // ── Athlete Alerts — badge ⚠️ pulsable del inicio ────────────
+  Future<List<Map<String, dynamic>>> getAlerts() async {
+    final r = await _dio.get('/athlete/alerts');
+    final list = (r.data as Map<String, dynamic>)['alerts'] as List<dynamic>? ?? [];
+    return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+  }
+
   // ── Week Plan (P0) ───────────────────────────────────────────
   Future<Map<String, dynamic>> getWeekPlan() async {
     final r = await _dio.get('/athlete/week',
