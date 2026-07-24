@@ -13,6 +13,13 @@ final _weekPlanProvider =
   return api.getWeekPlan();
 });
 
+// Nombre del entrenador asignado (para la cabecera "Plan · Entrenador: X").
+final _coachNameProvider =
+    FutureProvider.autoDispose<String?>((ref) async {
+  final api = ref.read(apiClientProvider);
+  return api.getCoach();
+});
+
 enum _PlanView { list, calendar }
 
 class WeekPlanScreen extends ConsumerStatefulWidget {
@@ -23,9 +30,34 @@ class WeekPlanScreen extends ConsumerStatefulWidget {
 }
 
 class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
-  _PlanView _view = _PlanView.list;
+  _PlanView _view = _PlanView.calendar; // por defecto: Calendario
   bool _calendarLoaded = false; // carga perezosa: solo al abrir el calendario
   int? _selectedDay;
+
+  @override
+  void initState() {
+    super.initState();
+    // Vista por defecto = Calendario → se carga al abrir (post-frame para ref seguro).
+    _calendarLoaded = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(planCalendarProvider.notifier).load();
+    });
+  }
+
+  static String _todayStr() {
+    final n = DateTime.now();
+    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+  }
+
+  bool _isCurrentMonth(DateTime m) {
+    final now = DateTime.now();
+    return m.year == now.year && m.month == now.month;
+  }
+
+  bool _isTodayDate(Map<String, dynamic> s) {
+    final raw = (s['scheduled_date'] ?? s['session_date']) as String? ?? '';
+    return raw.length >= 10 && raw.substring(0, 10) == _todayStr();
+  }
 
   void _switchTo(_PlanView v) {
     // El provider NO es autoDispose → su instancia persiste, así que cargar
@@ -51,10 +83,26 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
   @override
   Widget build(BuildContext context) {
     final skin = ref.watch(activeSkinProvider);
+    final coach = ref.watch(_coachNameProvider).valueOrNull;
     return Scaffold(
       backgroundColor: skin.background,
       appBar: AppBar(
-        title: const Text('Plan'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Plan'),
+            if (coach != null && coach.trim().isNotEmpty)
+              Text(
+                'Entrenador: ${coach.trim()}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: skin.textMuted,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+          ],
+        ),
         backgroundColor: skin.backgroundSecondary,
         foregroundColor: skin.textPrimary,
         elevation: 0,
@@ -116,14 +164,16 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
     final state = ref.watch(planCalendarProvider);
     final notifier = ref.read(planCalendarProvider.notifier);
 
-    final visible = _selectedDay == null
-        ? state.sessions
+    // Con un día tocado → filtramos ese día; si no, agenda anclada en HOY.
+    final filtered = _selectedDay == null
+        ? null
         : state.sessions.where((s) {
             final raw =
                 (s['scheduled_date'] ?? s['session_date']) as String? ?? '';
             final dp = raw.length >= 10 ? raw.substring(0, 10) : raw;
             return int.tryParse(dp.split('-').last) == _selectedDay;
           }).toList();
+    final isCurrentMonth = _isCurrentMonth(state.month);
 
     return Column(
       children: [
@@ -160,28 +210,137 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
             onDayTap: (d) => setState(
                 () => _selectedDay = _selectedDay == d ? null : d),
           ),
-          const SizedBox(height: 8),
+          // Botón "Hoy": vuelve a la agenda del día actual (limpia filtro / mes).
+          if (_selectedDay != null || !isCurrentMonth)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 12, top: 2),
+                child: TextButton.icon(
+                  onPressed: () {
+                    setState(() => _selectedDay = null);
+                    if (!isCurrentMonth) {
+                      _calendarLoaded = true;
+                      ref
+                          .read(planCalendarProvider.notifier)
+                          .goToCurrentMonth();
+                    }
+                  },
+                  icon: Icon(Icons.today, size: 16, color: skin.accent),
+                  label: Text('Hoy',
+                      style: TextStyle(
+                          color: skin.accent, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            )
+          else
+            const SizedBox(height: 8),
           Expanded(
-            child: visible.isEmpty
-                ? Center(
-                    child: Text(
-                      _selectedDay != null
-                          ? 'Sin sesiones este día'
-                          : 'Sin sesiones este mes',
-                      style: TextStyle(color: skin.textMuted, fontSize: 14),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    itemCount: visible.length,
-                    itemBuilder: (_, i) {
-                      final s = Map<String, dynamic>.from(visible[i]);
-                      return _SessionTile(
-                          skin: skin, session: s, onTap: () => _openSession(s));
-                    },
+            child: filtered != null
+                ? (filtered.isEmpty
+                    ? Center(
+                        child: Text('Sin sesiones este día',
+                            style: TextStyle(
+                                color: skin.textMuted, fontSize: 14)),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        itemCount: filtered.length,
+                        itemBuilder: (_, i) {
+                          final s = Map<String, dynamic>.from(filtered[i]);
+                          return _SessionTile(
+                              skin: skin,
+                              session: s,
+                              onTap: () => _openSession(s),
+                              isToday: _isTodayDate(s));
+                        },
+                      ))
+                : _AnchoredAgenda(
+                    skin: skin,
+                    sessions: state.sessions,
+                    onTap: _openSession,
                   ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+// ── Agenda anclada en HOY ────────────────────────────────────────
+// La sesión de hoy arranca arriba; se desliza ↑ para ver días pasados y
+// ↓ para los próximos. Usa el anclado nativo (CustomScrollView.center),
+// sin librerías: el sliver "centro" (hoy+futuro) empieza en el offset 0 y
+// el de pasados crece hacia arriba (índice 0 = el pasado más reciente).
+class _AnchoredAgenda extends StatelessWidget {
+  final SkinConfig skin;
+  final List<Map<String, dynamic>> sessions;
+  final void Function(Map<String, dynamic>) onTap;
+  const _AnchoredAgenda(
+      {required this.skin, required this.sessions, required this.onTap});
+
+  static String _dateOf(Map<String, dynamic> s) {
+    final raw = (s['scheduled_date'] ?? s['session_date']) as String? ?? '';
+    return raw.length >= 10 ? raw.substring(0, 10) : raw;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final n = DateTime.now();
+    final today =
+        '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+    final all = sessions.map((s) => Map<String, dynamic>.from(s)).toList();
+    final future = all.where((s) => _dateOf(s).compareTo(today) >= 0).toList()
+      ..sort((a, b) => _dateOf(a).compareTo(_dateOf(b))); // asc: hoy primero
+    final past = all.where((s) => _dateOf(s).compareTo(today) < 0).toList()
+      ..sort((a, b) => _dateOf(b).compareTo(_dateOf(a))); // desc: reciente arriba
+
+    if (future.isEmpty && past.isEmpty) {
+      return Center(
+        child: Text('Sin sesiones este mes',
+            style: TextStyle(color: skin.textMuted, fontSize: 14)),
+      );
+    }
+
+    Widget tile(Map<String, dynamic> s) => _SessionTile(
+        skin: skin,
+        session: s,
+        onTap: () => onTap(s),
+        isToday: _dateOf(s) == today);
+
+    // Sin hoy/futuro → lista normal ascendente de los pasados.
+    if (future.isEmpty) {
+      final asc = [...past]..sort((a, b) => _dateOf(a).compareTo(_dateOf(b)));
+      return ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        itemCount: asc.length,
+        itemBuilder: (_, i) => tile(asc[i]),
+      );
+    }
+
+    const centerKey = ValueKey('planAgendaCenter');
+    return CustomScrollView(
+      center: centerKey,
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (_, i) => tile(past[i]),
+              childCount: past.length,
+            ),
+          ),
+        ),
+        SliverPadding(
+          key: centerKey,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (_, i) => tile(future[i]),
+              childCount: future.length,
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -239,8 +398,8 @@ class _ViewToggle extends StatelessWidget {
       ),
       child: Row(
         children: [
-          seg(_PlanView.list, Icons.view_agenda_outlined, 'Lista'),
           seg(_PlanView.calendar, Icons.calendar_month_outlined, 'Calendario'),
+          seg(_PlanView.list, Icons.view_agenda_outlined, 'Lista'),
         ],
       ),
     );
@@ -515,8 +674,12 @@ class _SessionTile extends StatelessWidget {
   final SkinConfig skin;
   final Map<String, dynamic> session;
   final VoidCallback onTap;
+  final bool isToday;
   const _SessionTile(
-      {required this.skin, required this.session, required this.onTap});
+      {required this.skin,
+      required this.session,
+      required this.onTap,
+      this.isToday = false});
 
   static String _fmtDate(String? raw) {
     if (raw == null || raw.isEmpty) return '';
@@ -596,6 +759,23 @@ class _SessionTile extends StatelessWidget {
                   children: [
                     Row(
                       children: [
+                        if (isToday) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: skin.accent.withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text('HOY',
+                                style: TextStyle(
+                                    color: skin.accent,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.5)),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
                         if (esLibre) ...[
                           Container(
                             padding: const EdgeInsets.symmetric(

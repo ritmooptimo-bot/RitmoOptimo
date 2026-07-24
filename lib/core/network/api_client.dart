@@ -130,6 +130,12 @@ class ApiClient {
     return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
   }
 
+  // ── Entrenador asignado — cabecera de la pestaña Plan ────────
+  Future<String?> getCoach() async {
+    final r = await _dio.get('/athlete/coach');
+    return (r.data as Map<String, dynamic>)['coach_name'] as String?;
+  }
+
   // ── Week Plan (P0) ───────────────────────────────────────────
   Future<Map<String, dynamic>> getWeekPlan() async {
     final r = await _dio.get('/athlete/week',

@@ -47,6 +47,13 @@ class PlanCalendarNotifier extends StateNotifier<HistoryState> {
     state = state.copyWith(month: next);
     await load();
   }
+
+  // Volver al mes actual (botón "Hoy" de la pestaña Plan).
+  Future<void> goToCurrentMonth() async {
+    final now = DateTime.now();
+    state = state.copyWith(month: DateTime(now.year, now.month));
+    await load();
+  }
 }
 
 final planCalendarProvider =
