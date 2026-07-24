@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/skin_provider.dart';
 import '../../core/network/api_client.dart';
+import 'hrv_camera_screen.dart';
 
 // ── Wellness Screen ──────────────────────────────────────────────
 // Check-in diario de bienestar + registro HRV matutino.
@@ -364,6 +365,27 @@ class _HRVCard extends StatelessWidget {
                   ),
                 )),
               ]),
+              const SizedBox(height: 12),
+              // Medir HRV/FC con la cámara + flash (PPG), sin banda ni reloj.
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final res = await Navigator.of(context).push<Map>(
+                      MaterialPageRoute(
+                          builder: (_) => const HrvCameraScreen()),
+                    );
+                    if (res != null) {
+                      if (res['hrv'] != null) hrvCtrl.text = '${res['hrv']}';
+                      if (res['hr'] != null) hrCtrl.text = '${res['hr']}';
+                    }
+                  },
+                  icon: Icon(Icons.camera_alt_outlined,
+                      size: 18, color: skin.accent),
+                  label: Text('Medir con la cámara',
+                      style: TextStyle(color: skin.accent)),
+                ),
+              ),
             ],
           ),
         ),

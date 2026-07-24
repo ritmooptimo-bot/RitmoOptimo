@@ -23,6 +23,11 @@
     <!-- Fix #11: Permite TTS en background en Android 14+ sin que el sistema lo silencie -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
 
+    <!-- Cámara — medición de HRV/FC matutino por PPG (dedo sobre cámara + flash) -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-feature android:name="android.hardware.camera.flash" android:required="false"/>
+
     <application
         android:label="Ritmo Óptimo"
         android:name="${applicationName}"
