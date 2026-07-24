@@ -1104,6 +1104,15 @@ class _SessionContent extends StatelessWidget {
       case 'scheduled':
         statusColor = skin.accent;
         statusText  = 'Programada';
+      case 'missed':
+        // Antes caía en 'default' → "Pendiente": una sesión no realizada salía
+        // como pendiente en Inicio pero "Perdida" en el Plan (misma sesión, dos
+        // etiquetas). Ahora coincide con el Plan.
+        statusColor = skin.error;
+        statusText  = 'Perdida';
+      case 'rest':
+        statusColor = skin.textMuted;
+        statusText  = 'Descanso';
       default:
         statusColor = skin.accent;
         statusText  = 'Pendiente';

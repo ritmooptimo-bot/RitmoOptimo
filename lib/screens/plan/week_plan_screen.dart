@@ -802,37 +802,49 @@ class _SessionTile extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
                             ),
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      rawMin != null
-                          ? '${_fmtDate(date)}  ·  ${_fmtDuration(rawMin)}'
-                          : _fmtDate(date),
-                      style: TextStyle(color: skin.textMuted, fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
+                    const SizedBox(height: 6),
+                    // Fecha · duración  +  chip de estado (movido aquí abajo para
+                    // que el título tenga el ancho completo y no se corte).
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            rawMin != null
+                                ? '${_fmtDate(date)}  ·  ${_fmtDuration(rawMin)}'
+                                : _fmtDate(date),
+                            style:
+                                TextStyle(color: skin.textMuted, fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: statusColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: statusColor.withValues(alpha: 0.35)),
+                          ),
+                          child: Text(
+                            statusLabel,
+                            style: TextStyle(
+                              color: statusColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                  border:
-                      Border.all(color: statusColor.withValues(alpha: 0.35)),
-                ),
-                child: Text(
-                  statusLabel,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
                 ),
               ),
               const SizedBox(width: 6),
