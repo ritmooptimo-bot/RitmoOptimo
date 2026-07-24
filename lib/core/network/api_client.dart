@@ -180,9 +180,11 @@ class ApiClient {
     return r.data as Map<String, dynamic>;
   }
 
-  // ── Wellness (P1) ────────────────────────────────────────────
+  // ── Wellness (P1) — check-in diario del ATLETA ───────────────
+  // /wellness/athlete (no /wellness, que es solo-coach). Identifica al atleta
+  // por token, mapea los campos y calcula el wellness_score en el backend.
   Future<Map<String, dynamic>> postWellness(Map<String, dynamic> data) async {
-    final r = await _dio.post('/wellness', data: data);
+    final r = await _dio.post('/wellness/athlete', data: data);
     return r.data as Map<String, dynamic>;
   }
 

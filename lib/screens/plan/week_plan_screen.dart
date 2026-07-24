@@ -730,6 +730,11 @@ class _SessionTile extends StatelessWidget {
       case 'approved':
         statusColor = skin.accent;
         statusLabel = 'Aprobada';
+      case 'rest':
+        // Coincide con Inicio (que ya dice "Descanso"): un descanso no es una
+        // sesión "Programada".
+        statusColor = skin.textMuted;
+        statusLabel = 'Descanso';
       default:
         statusColor = skin.textMuted;
         statusLabel = 'Programada';
