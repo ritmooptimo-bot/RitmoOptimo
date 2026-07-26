@@ -11,10 +11,12 @@ class BleService {
   StreamSubscription? _stateSub;
 
   final _hrController    = StreamController<int>.broadcast();
+  final _rrController    = StreamController<List<double>>.broadcast();
   final _stateController = StreamController<bool>.broadcast();
 
-  Stream<int>  get hrStream        => _hrController.stream;
-  Stream<bool> get connectedStream => _stateController.stream;
+  Stream<int>          get hrStream        => _hrController.stream;
+  Stream<List<double>> get rrStream        => _rrController.stream;
+  Stream<bool>         get connectedStream => _stateController.stream;
 
   bool    get isConnected         => _device?.isConnected ?? false;
   String? get connectedDeviceName => _device?.platformName;
@@ -64,7 +66,10 @@ class BleService {
         // lastValueStream emite todas las notificaciones BLE recibidas del dispositivo.
         // Se omite el primer valor (caché vacía) con skip(1).
         _hrSub = char.lastValueStream.skip(1).listen((data) {
-          if (data.isNotEmpty) _hrController.add(_parseHR(data));
+          if (data.isEmpty) return;
+          _hrController.add(_parseHR(data));
+          final rr = _parseRR(data);
+          if (rr.isNotEmpty) _rrController.add(rr);
         });
 
         await char.setNotifyValue(true);
@@ -90,10 +95,30 @@ class BleService {
     return (flags & 0x01) == 0 ? value[1] : (value[2] << 8 | value[1]);
   }
 
+  // Intervalos R-R (ms) del HR Measurement (0x2A37), si el flag bit 4 los marca
+  // presentes. Cada R-R es uint16 little-endian en unidades de 1/1024 s. Esto es
+  // lo que permite un HRV (rMSSD) PRECISO con banda de pecho — la cámara solo
+  // estima. El offset salta flags + HR (1 o 2 bytes) + energía gastada (bit 3).
+  List<double> _parseRR(List<int> v) {
+    if (v.isEmpty) return const [];
+    final flags = v[0];
+    if ((flags & 0x10) == 0) return const []; // bit 4: sin R-R
+    int i = 1 + ((flags & 0x01) == 0 ? 1 : 2); // tras flags + HR
+    if ((flags & 0x08) != 0) i += 2; // energía gastada presente (bit 3)
+    final out = <double>[];
+    while (i + 1 < v.length) {
+      final raw = v[i] | (v[i + 1] << 8);
+      out.add(raw * 1000.0 / 1024.0); // → ms
+      i += 2;
+    }
+    return out;
+  }
+
   void dispose() {
     _hrSub?.cancel();
     _stateSub?.cancel();
     _hrController.close();
+    _rrController.close();
     _stateController.close();
   }
 }

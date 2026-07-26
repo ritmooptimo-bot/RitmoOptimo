@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/skin_provider.dart';
 import '../../core/network/api_client.dart';
 import 'hrv_camera_screen.dart';
+import 'hrv_band_screen.dart';
 
 // ── Wellness Screen ──────────────────────────────────────────────
 // Check-in diario de bienestar + registro HRV matutino.
@@ -25,6 +26,7 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
   // HRV opcional
   final _hrvCtrl = TextEditingController();
   final _hrCtrl  = TextEditingController();
+  String _hrvMethod = 'manual'; // manual | camera | band (según cómo se midió)
 
   bool _saving   = false;
   bool _done     = false;
@@ -60,7 +62,7 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
             'resting_hr_bpm': int.tryParse(_hrCtrl.text),
           'sleep_hours':  _sleepH,
           'sleep_quality': _sleepQ.round(),
-          'measurement_method': 'manual',
+          'measurement_method': _hrvMethod,
         });
       }
 
@@ -138,7 +140,11 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
                   const SizedBox(height: 16),
 
                   // HRV Opcional
-                  _HRVCard(skin: skin, hrvCtrl: _hrvCtrl, hrCtrl: _hrCtrl),
+                  _HRVCard(
+                      skin: skin,
+                      hrvCtrl: _hrvCtrl,
+                      hrCtrl: _hrCtrl,
+                      onMethod: (m) => _hrvMethod = m),
 
                   const SizedBox(height: 32),
 
@@ -298,7 +304,134 @@ class _HRVCard extends StatelessWidget {
   final dynamic skin;
   final TextEditingController hrvCtrl;
   final TextEditingController hrCtrl;
-  const _HRVCard({required this.skin, required this.hrvCtrl, required this.hrCtrl});
+  final ValueChanged<String>? onMethod;
+  const _HRVCard(
+      {required this.skin,
+      required this.hrvCtrl,
+      required this.hrCtrl,
+      this.onMethod});
+
+  // Selector Cámara / Banda de pecho → abre la pantalla → rellena los campos.
+  Future<void> _openMeasure(BuildContext context) async {
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: skin.backgroundSecondary,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: skin.textMuted.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 16),
+              Text('¿Cómo quieres medir tu HRV?',
+                  style: TextStyle(
+                      color: skin.textPrimary,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 16),
+              _sourceTile(ctx, Icons.monitor_heart_outlined, 'Banda de pecho',
+                  'Intervalos R-R reales', 'ble',
+                  recommended: true),
+              const SizedBox(height: 10),
+              _sourceTile(ctx, Icons.camera_alt_outlined, 'Cámara + flash',
+                  'Estimación rápida, sin accesorios', 'camera_ppg'),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (source == null || !context.mounted) return;
+    Map? res;
+    if (source == 'camera_ppg') {
+      res = await Navigator.of(context).push<Map>(
+          MaterialPageRoute(builder: (_) => const HrvCameraScreen()));
+    } else if (source == 'ble') {
+      res = await Navigator.of(context)
+          .push<Map>(MaterialPageRoute(builder: (_) => const HrvBandScreen()));
+    }
+    if (res != null) {
+      if (res['hrv'] != null) hrvCtrl.text = '${res['hrv']}';
+      if (res['hr'] != null) hrCtrl.text = '${res['hr']}';
+      onMethod?.call(res['method'] as String? ?? source);
+    }
+  }
+
+  Widget _sourceTile(BuildContext ctx, IconData icon, String title,
+      String subtitle, String value,
+      {bool recommended = false}) {
+    return InkWell(
+      onTap: () => Navigator.of(ctx).pop(value),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: skin.background,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: recommended
+                  ? skin.accent
+                  : skin.textMuted.withValues(alpha: 0.25),
+              width: recommended ? 2 : 1),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: skin.accent, size: 30),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: skin.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      if (recommended) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                              color: skin.accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8)),
+                          child: Text('preciso',
+                              style: TextStyle(
+                                  color: skin.accent,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Expanded(
+                        child: Text(subtitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                TextStyle(color: skin.textMuted, fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: skin.textMuted, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) => Card(
@@ -366,24 +499,14 @@ class _HRVCard extends StatelessWidget {
                 )),
               ]),
               const SizedBox(height: 12),
-              // Medir HRV/FC con la cámara + flash (PPG), sin banda ni reloj.
+              // Medir HRV/FC: elige cámara (estimación) o banda de pecho (preciso).
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () async {
-                    final res = await Navigator.of(context).push<Map>(
-                      MaterialPageRoute(
-                          builder: (_) => const HrvCameraScreen()),
-                    );
-                    if (res != null) {
-                      if (res['hrv'] != null) hrvCtrl.text = '${res['hrv']}';
-                      if (res['hr'] != null) hrCtrl.text = '${res['hr']}';
-                    }
-                  },
-                  icon: Icon(Icons.camera_alt_outlined,
-                      size: 18, color: skin.accent),
-                  label: Text('Medir con la cámara',
-                      style: TextStyle(color: skin.accent)),
+                  onPressed: () => _openMeasure(context),
+                  icon: Icon(Icons.favorite_border, size: 18, color: skin.accent),
+                  label:
+                      Text('Medir HRV', style: TextStyle(color: skin.accent)),
                 ),
               ),
             ],

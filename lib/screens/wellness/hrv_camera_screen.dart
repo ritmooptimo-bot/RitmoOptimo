@@ -19,7 +19,8 @@ class HrvCameraScreen extends ConsumerStatefulWidget {
 }
 
 class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
-  static const int _durationSec = 60;
+  static const int _durationSec = 45;
+  static const int _warmupMs = 4000; // descartar el arranque (dedo + auto-exposición)
 
   CameraController? _cam;
   bool _initializing = true;
@@ -93,6 +94,16 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
       _bpmLive = 0;
     });
     await _cam!.startImageStream(_onFrame);
+    // Tras ~1,2 s (que el auto-ajuste se adapte al dedo + flash), BLOQUEAR
+    // exposición y enfoque: si el AGC sigue "peleando" con el pulso, lo
+    // distorsiona y aparecen picos falsos (FC/HRV disparados). Los primeros
+    // _warmupMs se descartan igualmente en _process.
+    Future.delayed(const Duration(milliseconds: 1200), () async {
+      try {
+        await _cam?.setExposureMode(ExposureMode.locked);
+        await _cam?.setFocusMode(FocusMode.locked);
+      } catch (_) {}
+    });
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
       setState(() => _remaining--);
@@ -129,6 +140,11 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
     try {
       await _cam?.setFlashMode(FlashMode.off);
     } catch (_) {}
+    // Volver a auto para que una nueva medición ("Repetir") parta limpia.
+    try {
+      await _cam?.setExposureMode(ExposureMode.auto);
+      await _cam?.setFocusMode(FocusMode.auto);
+    } catch (_) {}
     final res = _process();
     if (!mounted) return;
     setState(() {
@@ -139,50 +155,78 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
     });
   }
 
-  // ── Procesado PPG: detrend → picos → intervalos → FC + rMSSD ────
+  // ── Procesado PPG: arranque → suavizado → detrend → picos → FC + rMSSD ──
   (int, int) _process() {
-    if (_values.length < 40) return (0, 0);
-    // 1) Detrend: restar media móvil (quita la deriva lenta del brillo).
-    const w = 8;
-    final detr = List<double>.filled(_values.length, 0);
+    // 0) Descartar el ARRANQUE (dedo asentándose + auto-exposición todavía
+    //    adaptándose): los primeros _warmupMs de muestras no se usan.
+    final vals = <double>[];
+    final ts = <int>[];
     for (int i = 0; i < _values.length; i++) {
-      final a = max(0, i - w), b = min(_values.length - 1, i + w);
-      double s = 0;
-      for (int j = a; j <= b; j++) {
-        s += _values[j];
+      if (_times[i] >= _warmupMs) {
+        vals.add(_values[i]);
+        ts.add(_times[i]);
       }
-      detr[i] = _values[i] - s / (b - a + 1);
     }
-    // 2) Picos: máximo local por encima de un umbral (0.5·desv.típica) con
-    //    distancia mínima entre latidos (300 ms → máx. 200 ppm).
+    if (vals.length < 40) return (0, 0);
+    // 1) PASO BANDA. Suavizado FUERTE (dos pasadas de media móvil de 5 →
+    //    lowpass ~2,6 Hz) para eliminar el ruido de alta frecuencia, y detrend
+    //    (restar media móvil ancha ~1 s) para quitar la deriva de brillo. El
+    //    resultado es una onda de pulso limpia → picos bien ubicados en el
+    //    tiempo, que es de lo que depende la precisión del HRV (rMSSD).
+    final sm = _movAvg(_movAvg(vals, 2), 2);
+    final base = _movAvg(sm, 15);
+    final detr = List<double>.filled(sm.length, 0);
+    for (int i = 0; i < sm.length; i++) {
+      detr[i] = sm[i] - base[i];
+    }
+    // 3) Picos: MÁXIMO LOCAL en ±3 muestras, por encima de 0,6·desv.típica, con
+    //    periodo refractario 350 ms (máx. ~170 ppm) → no cuenta picos falsos.
     final std = _std(detr);
     if (std <= 0) return (0, 0);
-    final thr = std * 0.5;
-    final peaks = <int>[];
-    int last = -1000;
-    for (int i = 1; i < detr.length - 1; i++) {
-      if (detr[i] > thr && detr[i] >= detr[i - 1] && detr[i] > detr[i + 1]) {
-        if (_times[i] - last > 300) {
-          peaks.add(_times[i]);
-          last = _times[i];
+    final thr = std * 0.6;
+    final peaks = <double>[]; // tiempos de pico en ms (con precisión sub-frame)
+    double last = -1000;
+    for (int i = 3; i < detr.length - 3; i++) {
+      if (detr[i] <= thr) continue;
+      bool localMax = true;
+      for (int k = i - 3; k <= i + 3; k++) {
+        if (detr[k] > detr[i]) {
+          localMax = false;
+          break;
         }
       }
+      if (!localMax || ts[i] - last <= 350) continue;
+      // Interpolación parabólica: estima el instante REAL del pico ENTRE
+      // fotogramas. A ~30 fps cada muestra dista ~33 ms; sin esto, el jitter de
+      // ±1 frame por latido infla el rMSSD (HRV). El vértice de la parábola que
+      // pasa por (i-1, i, i+1) recupera la precisión de tiempo perdida.
+      final denom = detr[i - 1] - 2 * detr[i] + detr[i + 1];
+      double tPeak = ts[i].toDouble();
+      if (denom < 0) {
+        final frac = 0.5 * (detr[i - 1] - detr[i + 1]) / denom;
+        if (frac > -1 && frac < 1) {
+          final dtLocal = (ts[i + 1] - ts[i - 1]) / 2.0;
+          tPeak = ts[i] + frac * dtLocal;
+        }
+      }
+      peaks.add(tPeak);
+      last = tPeak;
     }
-    if (peaks.length < 6) return (0, 0);
-    // 3) Intervalos latido-a-latido (IBI) válidos + rechazo de artefactos.
+    if (peaks.length < 5) return (0, 0);
+    // 4) Intervalos latido-a-latido (IBI): rango fisiológico (40–170 ppm) +
+    //    rechazo de artefactos por desviación de la MEDIANA (robusto a fallos).
+    //    Margen 30%: la cámara es más ruidosa que un sensor de contacto.
     var ibis = <double>[];
     for (int i = 1; i < peaks.length; i++) {
       ibis.add((peaks[i] - peaks[i - 1]).toDouble());
     }
-    ibis = ibis.where((x) => x >= 300 && x <= 1500).toList();
-    final clean = <double>[];
-    for (int i = 0; i < ibis.length; i++) {
-      if (i == 0 || (ibis[i] - ibis[i - 1]).abs() / ibis[i - 1] < 0.2) {
-        clean.add(ibis[i]);
-      }
-    }
+    ibis = ibis.where((x) => x >= 350 && x <= 1500).toList();
+    if (ibis.length < 4) return (0, 0);
+    final med = _median(ibis);
+    if (med <= 0) return (0, 0);
+    final clean = ibis.where((x) => (x - med).abs() / med < 0.30).toList();
     if (clean.length < 4) return (0, 0);
-    // 4) FC = 60000 / IBI medio · HRV = rMSSD.
+    // 5) FC = 60000 / IBI medio · HRV = rMSSD (sobre los IBI limpios).
     final meanIbi = clean.reduce((a, b) => a + b) / clean.length;
     final hr = (60000 / meanIbi).round();
     double sq = 0;
@@ -193,8 +237,29 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
       m++;
     }
     final rmssd = m > 0 ? sqrt(sq / m).round() : 0;
-    if (hr < 30 || hr > 220) return (0, 0);
+    if (hr < 40 || hr > 170) return (0, 0);
     return (hr, rmssd);
+  }
+
+  // Media móvil (ventana ±half): filtro paso bajo reutilizable.
+  List<double> _movAvg(List<double> v, int half) {
+    final out = List<double>.filled(v.length, 0);
+    for (int i = 0; i < v.length; i++) {
+      final a = max(0, i - half), b = min(v.length - 1, i + half);
+      double s = 0;
+      for (int j = a; j <= b; j++) {
+        s += v[j];
+      }
+      out[i] = s / (b - a + 1);
+    }
+    return out;
+  }
+
+  double _median(List<double> v) {
+    if (v.isEmpty) return 0;
+    final s = [...v]..sort();
+    final mid = s.length ~/ 2;
+    return s.length.isOdd ? s[mid] : (s[mid - 1] + s[mid]) / 2;
   }
 
   double _std(List<double> v) {
@@ -239,58 +304,199 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
     );
   }
 
-  Widget _live(SkinConfig skin) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.favorite,
-            color: skin.error,
-            size: _measuring ? 110 : 90),
-        const SizedBox(height: 20),
-        if (!_measuring) ...[
+  Widget _live(SkinConfig skin) =>
+      _measuring ? _measuringView(skin) : _introView(skin);
+
+  // ── Intro: guía visual en 3 pasos + botón ──────────────────────
+  Widget _introView(SkinConfig skin) {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          const SizedBox(height: 4),
           Text('Medir tu HRV',
               style: TextStyle(
                   color: skin.textPrimary,
                   fontSize: 22,
                   fontWeight: FontWeight.w700)),
-          const SizedBox(height: 12),
-          Text(
-            'Tapa la cámara trasera y el flash con la yema del dedo, sin apretar. '
-            'Quédate quieto durante $_durationSec segundos.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: skin.textSecondary, fontSize: 14, height: 1.4),
+          const SizedBox(height: 16),
+          // Pasos 1 y 2 en fila.
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _guideCard(
+                skin,
+                '1',
+                'Usa el índice',
+                SizedBox(
+                  width: 92,
+                  height: 100,
+                  child: CustomPaint(
+                    painter: _HandPainter(
+                        fill: const Color(0xFFD9A57E),
+                        dot: const Color(0xFFE53935)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              _guideCard(
+                skin,
+                '2',
+                'Tápala con la yema',
+                SizedBox(width: 92, height: 100, child: _fingerToCameraArt(skin)),
+              ),
+            ],
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 12),
+          // Paso 3: cómo queda (móvil con el dedo sobre cámara + flash).
+          _guideCard(
+            skin,
+            '3',
+            'Cámara y flash, juntos',
+            SizedBox(width: 150, height: 140, child: _placementArt(skin)),
+            width: 200,
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'Sin apretar. Colócalo ANTES de empezar y no te muevas $_durationSec s.',
+            textAlign: TextAlign.center,
+            style:
+                TextStyle(color: skin.textSecondary, fontSize: 14, height: 1.4),
+          ),
+          const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
             height: 52,
             child: ElevatedButton(
               onPressed: _start,
               child: const Text('COMENZAR',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700, letterSpacing: 2)),
+                  style:
+                      TextStyle(fontWeight: FontWeight.w700, letterSpacing: 2)),
             ),
           ),
-        ] else ...[
-          Text('$_remaining s',
-              style: TextStyle(
-                  color: skin.textPrimary,
-                  fontSize: 40,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: skin.fontFamilyMono)),
-          const SizedBox(height: 8),
-          Text(
-            _bpmLive > 0 ? '$_bpmLive ppm' : 'Detectando pulso…',
-            style: TextStyle(
-                color: _bpmLive > 0 ? skin.accent : skin.textMuted,
-                fontSize: 18,
-                fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 24),
-          Text('Mantén el dedo sobre la cámara y el flash.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: skin.textMuted, fontSize: 13)),
+          const SizedBox(height: 12),
         ],
+      ),
+    );
+  }
+
+  // ── Medición en curso ──────────────────────────────────────────
+  Widget _measuringView(SkinConfig skin) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.favorite, color: skin.error, size: 110),
+        const SizedBox(height: 20),
+        Text('$_remaining s',
+            style: TextStyle(
+                color: skin.textPrimary,
+                fontSize: 40,
+                fontWeight: FontWeight.w800,
+                fontFamily: skin.fontFamilyMono)),
+        const SizedBox(height: 8),
+        Text(
+          _bpmLive > 0 ? '$_bpmLive ppm' : 'Detectando pulso…',
+          style: TextStyle(
+              color: _bpmLive > 0 ? skin.accent : skin.textMuted,
+              fontSize: 18,
+              fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 24),
+        Text('Mantén el dedo sobre la cámara y el flash.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: skin.textMuted, fontSize: 13)),
+      ],
+    );
+  }
+
+  // Tarjeta contenedora de cada paso de la guía visual.
+  Widget _guideCard(SkinConfig skin, String n, String caption, Widget art,
+      {double width = 128}) {
+    return Container(
+      width: width,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      decoration: BoxDecoration(
+        color: skin.backgroundSecondary,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: skin.textMuted.withOpacity(0.2)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration:
+                BoxDecoration(color: skin.accent, shape: BoxShape.circle),
+            child: Text(n,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800)),
+          ),
+          const SizedBox(height: 6),
+          art,
+          const SizedBox(height: 6),
+          Text(caption,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: skin.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  // Paso 2: la yema subiendo sobre la cámara + flash (flecha de movimiento).
+  Widget _fingerToCameraArt(SkinConfig skin) {
+    return Stack(
+      alignment: Alignment.topCenter,
+      children: [
+        Positioned(
+          top: 2,
+          child: Container(
+            width: 74,
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: skin.textPrimary.withOpacity(0.13),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  width: 17,
+                  height: 17,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: skin.background,
+                    border: Border.all(color: skin.textSecondary, width: 3),
+                  ),
+                ),
+                Container(
+                  width: 11,
+                  height: 11,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFFFFC107),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Positioned(
+          top: 36,
+          child: Icon(Icons.keyboard_double_arrow_up,
+              size: 20, color: skin.accent),
+        ),
+        Positioned(
+          top: 52,
+          child: Icon(Icons.touch_app, size: 46, color: skin.accent),
+        ),
       ],
     );
   }
@@ -372,6 +578,82 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
     );
   }
 
+  // Paso 3: móvil con la yema tapando cámara + flash (versión compacta).
+  Widget _placementArt(SkinConfig skin) {
+    return Stack(
+      alignment: Alignment.topCenter,
+      children: [
+        // Cuerpo del móvil (visto por detrás).
+        Positioned(
+          top: 0,
+          child: Container(
+            width: 84,
+            height: 132,
+            decoration: BoxDecoration(
+              color: skin.textPrimary.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(18),
+              border:
+                  Border.all(color: skin.textMuted.withOpacity(0.5), width: 2),
+            ),
+          ),
+        ),
+        // Módulo de cámara: lente (anillo) + flash (punto amarillo).
+        Positioned(
+          top: 14,
+          child: Container(
+            width: 66,
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: skin.textPrimary.withOpacity(0.13),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: skin.background,
+                    border: Border.all(color: skin.textSecondary, width: 3),
+                  ),
+                ),
+                Container(
+                  width: 11,
+                  height: 11,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFFFFC107),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Zona de la yema (translúcida): cubre a la vez cámara + flash.
+        Positioned(
+          top: 6,
+          child: Container(
+            width: 78,
+            height: 48,
+            decoration: BoxDecoration(
+              color: skin.accent.withOpacity(0.16),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: skin.accent, width: 2),
+            ),
+          ),
+        ),
+        // Dedo índice tocando la zona.
+        Positioned(
+          top: 44,
+          child: Icon(Icons.touch_app, size: 60, color: skin.accent),
+        ),
+      ],
+    );
+  }
+
   Widget _stat(SkinConfig skin, String value, String label, Color color) =>
       Column(
         children: [
@@ -399,4 +681,73 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
           ],
         ),
       );
+}
+
+// ── Mano estilizada (palma abierta hacia el deportista) con el dedo ÍNDICE
+//    marcado con un punto rojo: indica QUÉ dedo usar. ─────────────────────
+class _HandPainter extends CustomPainter {
+  final Color fill;
+  final Color dot;
+  _HandPainter({required this.fill, required this.dot});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    final p = Paint()
+      ..color = fill
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+
+    // Pulgar (lado izquierdo, inclinado) — se dibuja primero.
+    canvas.save();
+    canvas.translate(w * 0.29, h * 0.64);
+    canvas.rotate(-0.85);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+            center: Offset.zero, width: w * 0.17, height: h * 0.36),
+        Radius.circular(w * 0.09),
+      ),
+      p,
+    );
+    canvas.restore();
+
+    // Cuatro dedos: índice, corazón, anular, meñique.
+    final fw = w * 0.135;
+    final cols = [w * 0.34, w * 0.47, w * 0.60, w * 0.72];
+    final tops = [h * 0.20, h * 0.10, h * 0.16, h * 0.28];
+    for (int i = 0; i < 4; i++) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(cols[i] - fw / 2, tops[i], fw, h * 0.62 - tops[i]),
+          Radius.circular(fw / 2),
+        ),
+        p,
+      );
+    }
+
+    // Palma encima (tapa las bases de los dedos → silueta limpia).
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * 0.24, h * 0.44, w * 0.54, h * 0.44),
+        Radius.circular(w * 0.15),
+      ),
+      p,
+    );
+
+    // Punto rojo sobre el ÍNDICE (primer dedo), cerca de la punta.
+    final dotC = Offset(cols[0], tops[0] + h * 0.05);
+    canvas.drawCircle(dotC, w * 0.09, Paint()..color = dot);
+    canvas.drawCircle(
+      dotC,
+      w * 0.09,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
