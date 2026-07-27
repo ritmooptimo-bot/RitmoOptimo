@@ -146,6 +146,11 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
                       hrCtrl: _hrCtrl,
                       onMethod: (m) => _hrvMethod = m),
 
+                  const SizedBox(height: 12),
+
+                  // HRV vs línea base de 7 días (estado de recuperación)
+                  _HrvBaselineCard(skin: skin),
+
                   const SizedBox(height: 32),
 
                   SizedBox(
@@ -298,6 +303,116 @@ class _SleepCard extends StatelessWidget {
           ),
         ),
       );
+}
+
+// Estado del HRV de hoy vs la línea base de 7 días (GET /athlete/hrv-baseline).
+class _HrvBaselineCard extends ConsumerStatefulWidget {
+  final dynamic skin;
+  const _HrvBaselineCard({required this.skin});
+  @override
+  ConsumerState<_HrvBaselineCard> createState() => _HrvBaselineCardState();
+}
+
+class _HrvBaselineCardState extends ConsumerState<_HrvBaselineCard> {
+  Map<String, dynamic>? _b;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final b = await ref.read(apiClientProvider).getHrvBaseline();
+      if (mounted) setState(() {
+        _b = b;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final skin = widget.skin;
+    final b = _b;
+    if (_loading || b == null) return const SizedBox.shrink();
+    final status = b['status'] as String? ?? 'no_data';
+    if (status == 'no_data') return const SizedBox.shrink();
+
+    if (status == 'establishing') {
+      final n = b['nDays'] ?? 0;
+      final need = b['daysNeeded'] ?? 7;
+      return _wrap(skin, skin.textMuted, Icons.timelapse,
+          'Estableciendo tu HRV base ($n/$need días)',
+          'Mide a la misma hora cada día. En unos días verás si hoy estás por encima o por debajo de tu normal.');
+    }
+
+    final today = b['todayRmssd'];
+    final base = b['baselineRmssd'];
+    final Color color;
+    final IconData icon;
+    final String title;
+    final String sub;
+    switch (status) {
+      case 'low':
+        color = skin.error;
+        icon = Icons.trending_down;
+        title = 'HRV por debajo de tu media';
+        sub =
+            'Hoy $today vs ~$base ms. Tu cuerpo acusa carga o estrés: prioriza recuperar.';
+        break;
+      case 'high':
+        color = skin.success;
+        icon = Icons.trending_up;
+        title = 'HRV por encima de tu media';
+        sub = 'Hoy $today vs ~$base ms. Buena señal de recuperación.';
+        break;
+      default:
+        color = skin.accent;
+        icon = Icons.check_circle_outline;
+        title = 'HRV en tu rango normal';
+        sub = 'Hoy $today vs ~$base ms. Todo estable.';
+    }
+    return _wrap(skin, color, icon, title, sub);
+  }
+
+  Widget _wrap(dynamic skin, Color color, IconData icon, String title,
+      String sub) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 26),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: TextStyle(
+                          color: color,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 3),
+                  Text(sub,
+                      style: TextStyle(
+                          color: skin.textSecondary,
+                          fontSize: 12,
+                          height: 1.3)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _HRVCard extends StatelessWidget {

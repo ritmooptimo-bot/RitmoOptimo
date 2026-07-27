@@ -136,6 +136,12 @@ class ApiClient {
     return (r.data as Map<String, dynamic>)['coach_name'] as String?;
   }
 
+  // ── HRV vs línea base de 7 días (estado de recuperación) ─────
+  Future<Map<String, dynamic>> getHrvBaseline() async {
+    final r = await _dio.get('/athlete/hrv-baseline');
+    return (r.data as Map<String, dynamic>);
+  }
+
   // ── Week Plan (P0) ───────────────────────────────────────────
   Future<Map<String, dynamic>> getWeekPlan() async {
     final r = await _dio.get('/athlete/week',
