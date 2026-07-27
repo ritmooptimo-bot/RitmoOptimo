@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/skin_provider.dart';
 import '../../config/skins/skin_config.dart';
 import '../../core/hrv/hrv_references.dart';
+import '../../core/hrv/hrv_info_sheet.dart';
+import '../../core/network/api_client.dart';
 
 // ── Medición de FC/HRV matutino por PPG ──────────────────────────
 // El dedo tapa la cámara trasera con el flash (linterna) encendido; la cámara
@@ -38,11 +40,20 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
 
   int? _resultHr;
   int? _resultHrv;
+  int? _age; // edad del perfil (para el diálogo informativo por edad)
 
   @override
   void initState() {
     super.initState();
     _init();
+    _loadAge();
+  }
+
+  Future<void> _loadAge() async {
+    try {
+      final b = await ref.read(apiClientProvider).getProfileBasics();
+      if (mounted) setState(() => _age = b['age'] as int?);
+    } catch (_) {}
   }
 
   Future<void> _init() async {
@@ -527,7 +538,18 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
                   'ms (HRV)', skin.accent),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 6),
+          TextButton.icon(
+            onPressed: () => showHrvInfoSheet(context, skin,
+                fc: _resultHr ?? 0,
+                hrv: _resultHrv,
+                age: _age,
+                cameraHrv: true),
+            icon: Icon(Icons.info_outline, size: 16, color: skin.accent),
+            label: Text('¿Qué significan estos números?',
+                style: TextStyle(color: skin.accent, fontSize: 12.5)),
+          ),
+          const SizedBox(height: 8),
           Text(
             'Estimación para tu readiness — no es un dato clínico. Para máxima '
             'precisión, usa una banda de pecho.',

@@ -8,6 +8,7 @@ import '../../config/skins/skin_config.dart';
 import '../../core/ble/ble_service.dart';
 import '../../core/hrv/hrv_analysis.dart';
 import '../../core/hrv/hrv_references.dart';
+import '../../core/hrv/hrv_info_sheet.dart';
 import '../../core/network/api_client.dart';
 
 // ── Medición de HRV/FC con BANDA DE PECHO (BLE) ──────────────────────
@@ -343,7 +344,15 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
         ),
         const SizedBox(height: 14),
         _qualityBadge(skin, r),
-        const SizedBox(height: 14),
+        const SizedBox(height: 6),
+        TextButton.icon(
+          onPressed: () => showHrvInfoSheet(context, skin,
+              fc: r.hr, hrv: showHrv ? r.rmssd : null, age: _age),
+          icon: Icon(Icons.info_outline, size: 16, color: skin.accent),
+          label: Text('¿Qué significan estos números?',
+              style: TextStyle(color: skin.accent, fontSize: 12.5)),
+        ),
+        const SizedBox(height: 6),
         Text(msg,
             textAlign: TextAlign.center,
             style: TextStyle(color: skin.textMuted, fontSize: 12, height: 1.35)),
