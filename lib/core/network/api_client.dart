@@ -142,6 +142,12 @@ class ApiClient {
     return (r.data as Map<String, dynamic>);
   }
 
+  // ── "Estado de hoy" (readiness) ──────────────────────────────
+  Future<Map<String, dynamic>> getReadiness() async {
+    final r = await _dio.get('/athlete/readiness');
+    return (r.data as Map<String, dynamic>);
+  }
+
   // ── Edad / fecha de nacimiento + VO2max estimado ─────────────
   Future<Map<String, dynamic>> getProfileBasics() async {
     final r = await _dio.get('/athlete/profile-basics');

@@ -95,6 +95,9 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Estado de hoy / recordatorio (hecho o pendiente).
+                  _ReadinessBanner(skin: skin),
+
                   Text(
                     '¿Cómo te encuentras hoy?',
                     style: TextStyle(
@@ -308,6 +311,107 @@ class _SleepCard extends StatelessWidget {
           ),
         ),
       );
+}
+
+// Banner de "Estado de hoy": si ya hizo el check-in muestra el veredicto y
+// "vuelve mañana"; si no, invita a rellenarlo (antes de entrenar).
+class _ReadinessBanner extends ConsumerStatefulWidget {
+  final dynamic skin;
+  const _ReadinessBanner({required this.skin});
+  @override
+  ConsumerState<_ReadinessBanner> createState() => _ReadinessBannerState();
+}
+
+class _ReadinessBannerState extends ConsumerState<_ReadinessBanner> {
+  Map<String, dynamic>? _r;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final r = await ref.read(apiClientProvider).getReadiness();
+      if (mounted) setState(() {
+        _r = r;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final skin = widget.skin;
+    final r = _r;
+    if (_loading || r == null) return const SizedBox.shrink();
+    final done = r['doneToday'] == true;
+    if (!done) {
+      return _wrap(skin, skin.accent, Icons.today,
+          'Aún no has hecho tu check-in de hoy',
+          'Rellénalo abajo (2 min), mejor antes de entrenar: tu plan se adapta a cómo estás.');
+    }
+    final status = r['status'] as String? ?? 'yellow';
+    Color color;
+    switch (status) {
+      case 'green':
+        color = skin.success;
+        break;
+      case 'red':
+        color = skin.error;
+        break;
+      default:
+        color = skin.warning;
+    }
+    final label = r['label'] as String? ?? 'Estado de hoy';
+    final advice = r['advice'] as String? ?? '';
+    return _wrap(skin, color, Icons.check_circle, 'Hecho hoy · $label',
+        '$advice\nYa registrado — mañana toca el siguiente.');
+  }
+
+  Widget _wrap(dynamic skin, Color color, IconData icon, String title,
+      String sub) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: TextStyle(
+                          color: color,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 3),
+                  Text(sub,
+                      style: TextStyle(
+                          color: skin.textSecondary,
+                          fontSize: 12,
+                          height: 1.3)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // Estado del HRV de hoy vs la línea base de 7 días (GET /athlete/hrv-baseline).
