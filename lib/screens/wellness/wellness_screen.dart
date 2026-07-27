@@ -43,8 +43,26 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
 
   Future<void> _loadTodayReadiness() async {
     try {
-      final r = await ref.read(apiClientProvider).getReadiness();
-      if (mounted) setState(() => _todayReadiness = r);
+      final r = await ref.read(apiClientProvider).getWellnessToday();
+      if (!mounted) return;
+      setState(() {
+        _todayReadiness = r;
+        // Una medición al día: si ya hay check-in de hoy, pre-rellenamos el
+        // formulario con lo guardado (sliders + HRV/FC medidos hoy), no defaults.
+        // Así el deportista ve lo suyo y, si lo cambia, se le avisa de sobrescritura.
+        if (r['doneToday'] == true) {
+          final f = r['fatigue'], m = r['mood'], mo = r['motivation'];
+          final sh = r['sleep_hours'], sq = r['sleep_quality'];
+          if (f is num)  _fatigue    = f.toDouble();
+          if (m is num)  _mood       = m.toDouble();
+          if (mo is num) _motivation = mo.toDouble();
+          if (sh is num) _sleepH     = sh.toDouble();
+          if (sq is num) _sleepQ     = sq.toDouble();
+          if (r['hrv_ms'] is num)         _hrvCtrl.text = (r['hrv_ms'] as num).round().toString();
+          if (r['resting_hr_bpm'] is num) _hrCtrl.text  = (r['resting_hr_bpm'] as num).round().toString();
+          if (r['measurement_method'] is String) _hrvMethod = r['measurement_method'] as String;
+        }
+      });
     } catch (_) {/* si falla, se guarda sin aviso previo */}
   }
 

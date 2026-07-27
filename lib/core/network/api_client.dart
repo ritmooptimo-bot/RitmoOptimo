@@ -148,6 +148,12 @@ class ApiClient {
     return (r.data as Map<String, dynamic>);
   }
 
+  // ── Check-in de HOY (para pre-rellenar Bienestar: valores + HRV/FC de hoy) ──
+  Future<Map<String, dynamic>> getWellnessToday() async {
+    final r = await _dio.get('/athlete/wellness-today');
+    return (r.data as Map<String, dynamic>);
+  }
+
   // ── Edad / fecha de nacimiento + VO2max estimado ─────────────
   Future<Map<String, dynamic>> getProfileBasics() async {
     final r = await _dio.get('/athlete/profile-basics');
