@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/skin_provider.dart';
 import '../../models/sport.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/pending_tracks.dart';
+import '../../core/notifications/notification_service.dart';
 import '../../providers/workout_provider.dart';
 import '../../config/skins/skin_config.dart';
 
@@ -24,10 +26,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       PendingTracks.reintentarTodo(ref.read(apiClientProvider))
           .then((n) { if (n > 0) debugPrint('[PendingTracks] $n recorrido(s) subido(s) al abrir'); });
+      _setupCheckinReminder();
     });
     Future.microtask(
       () => ref.read(dashboardProvider.notifier).load(),
     );
+  }
+
+  // Pide el permiso de notificaciones (una vez) y programa el recordatorio
+  // diario del check-in de Bienestar. Solo aquí (el deportista ya está logueado).
+  Future<void> _setupCheckinReminder() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('notif_checkin_scheduled') == true) return;
+      final granted = await NotificationService.requestPermission();
+      if (granted) {
+        await NotificationService.scheduleDailyCheckin(hour: 8);
+        await prefs.setBool('notif_checkin_scheduled', true);
+      }
+    } catch (_) {/* si falla, no bloquea la app */}
   }
 
   @override

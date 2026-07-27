@@ -1,7 +1,7 @@
 ﻿name: ritmooptimo_mobile
 description: RitmoOptimo â€” Plataforma de Coaching Deportivo con IA
 publish_to: none
-version: 7.4.37+121
+version: 7.4.38+122
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -53,6 +53,11 @@ dependencies:
   intl: ^0.19.0
   connectivity_plus: ^6.0.3
   package_info_plus: ^8.0.0
+
+  # ── Notificaciones locales (recordatorio diario del check-in de Bienestar) ──
+  flutter_local_notifications: ^17.2.3
+  timezone: ^0.9.4
+  flutter_timezone: ^3.0.1
 
   # â”€â”€ Device Pairing (deep links + device ID) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   app_links: ^6.3.2

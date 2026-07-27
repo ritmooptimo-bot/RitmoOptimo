@@ -6,11 +6,15 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:app_links/app_links.dart';
 import 'config/router.dart';
 import 'providers/skin_provider.dart';
+import 'core/notifications/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Hive.initFlutter();
+
+  // Notificaciones locales (recordatorio diario del check-in de Bienestar).
+  await NotificationService.init();
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -49,6 +53,12 @@ class _RitmoOptimoAppState extends ConsumerState<RitmoOptimoApp> {
     ApiClient.onAuthLost = () {
       final router = ref.read(routerProvider);
       router.go(AppRoutes.login);
+    };
+
+    // Al pulsar la notificación del check-in → abrir la pestaña Bienestar.
+    NotificationService.onCheckinTap = () {
+      final router = ref.read(routerProvider);
+      router.go(AppRoutes.wellness);
     };
 
     // Esperar al primer frame para que GoRouter esté montado
