@@ -7,6 +7,8 @@ import '../../providers/skin_provider.dart';
 import '../../config/skins/skin_config.dart';
 import '../../core/ble/ble_service.dart';
 import '../../core/hrv/hrv_analysis.dart';
+import '../../core/hrv/hrv_references.dart';
+import '../../core/network/api_client.dart';
 
 // ── Medición de HRV/FC con BANDA DE PECHO (BLE) ──────────────────────
 // A diferencia de la cámara (estimación PPG), la banda envía los intervalos
@@ -43,11 +45,20 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
 
   HrvResult? _result; // análisis final (Lipponen-Tarvainen)
   bool _noSignal = false; // no llegó ningún R-R
+  int? _age; // edad del perfil (para la referencia de HRV por edad)
 
   @override
   void initState() {
     super.initState();
     _ble = ref.read(bleServiceProvider);
+    _loadAge();
+  }
+
+  Future<void> _loadAge() async {
+    try {
+      final b = await ref.read(apiClientProvider).getProfileBasics();
+      if (mounted) setState(() => _age = b['age'] as int?);
+    } catch (_) {}
   }
 
   Future<void> _connectAndMeasure() async {
@@ -323,9 +334,11 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _stat(skin, '${r.hr}', 'ppm (FC)', skin.error),
-            const SizedBox(width: 32),
-            _stat(skin, showHrv ? '${r.rmssd}' : '—', 'ms (HRV)', skin.accent),
+            _stat(skin, '${r.hr}', 'ppm (FC)', skin.error,
+                ref: fcRestLabel(r.hr)),
+            const SizedBox(width: 20),
+            _stat(skin, showHrv ? '${r.rmssd}' : '—', 'ms (HRV)', skin.accent,
+                ref: showHrv ? hrvAgeLabel(r.rmssd, _age) : null),
           ],
         ),
         const SizedBox(height: 14),
@@ -415,17 +428,28 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
     );
   }
 
-  Widget _stat(SkinConfig skin, String value, String label, Color color) =>
-      Column(
-        children: [
-          Text(value,
-              style: TextStyle(
-                  color: color,
-                  fontSize: 40,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: skin.fontFamilyMono)),
-          const SizedBox(height: 2),
-          Text(label, style: TextStyle(color: skin.textMuted, fontSize: 12)),
-        ],
+  Widget _stat(SkinConfig skin, String value, String label, Color color,
+          {String? ref}) =>
+      SizedBox(
+        width: 135,
+        child: Column(
+          children: [
+            Text(value,
+                style: TextStyle(
+                    color: color,
+                    fontSize: 40,
+                    fontWeight: FontWeight.w800,
+                    fontFamily: skin.fontFamilyMono)),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(color: skin.textMuted, fontSize: 12)),
+            if (ref != null) ...[
+              const SizedBox(height: 5),
+              Text(ref,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+            ],
+          ],
+        ),
       );
 }

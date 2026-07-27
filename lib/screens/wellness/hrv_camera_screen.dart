@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/skin_provider.dart';
 import '../../config/skins/skin_config.dart';
+import '../../core/hrv/hrv_references.dart';
 
 // ── Medición de FC/HRV matutino por PPG ──────────────────────────
 // El dedo tapa la cámara trasera con el flash (linterna) encendido; la cámara
@@ -519,8 +520,9 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _stat(skin, '$_resultHr', 'ppm (FC)', skin.error),
-              const SizedBox(width: 32),
+              _stat(skin, '$_resultHr', 'ppm (FC)', skin.error,
+                  ref: _resultHr != null ? fcRestLabel(_resultHr!) : null),
+              const SizedBox(width: 20),
               _stat(skin, _resultHrv != null ? '$_resultHrv' : '—',
                   'ms (HRV)', skin.accent),
             ],
@@ -660,19 +662,29 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
     );
   }
 
-  Widget _stat(SkinConfig skin, String value, String label, Color color) =>
-      Column(
-        children: [
-          Text(value,
-              style: TextStyle(
-                  color: color,
-                  fontSize: 40,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: skin.fontFamilyMono)),
-          const SizedBox(height: 2),
-          Text(label,
-              style: TextStyle(color: skin.textMuted, fontSize: 12)),
-        ],
+  Widget _stat(SkinConfig skin, String value, String label, Color color,
+          {String? ref}) =>
+      SizedBox(
+        width: 135,
+        child: Column(
+          children: [
+            Text(value,
+                style: TextStyle(
+                    color: color,
+                    fontSize: 40,
+                    fontWeight: FontWeight.w800,
+                    fontFamily: skin.fontFamilyMono)),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(color: skin.textMuted, fontSize: 12)),
+            if (ref != null) ...[
+              const SizedBox(height: 5),
+              Text(ref,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+            ],
+          ],
+        ),
       );
 
   Widget _center(SkinConfig skin, IconData icon, String text) => Center(
