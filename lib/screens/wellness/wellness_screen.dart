@@ -139,6 +139,11 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
 
                   const SizedBox(height: 16),
 
+                  // Edad + VO2max estimado (referencias) — arriba, antes de medir HRV
+                  _FitnessCard(skin: skin),
+
+                  const SizedBox(height: 16),
+
                   // HRV Opcional
                   _HRVCard(
                       skin: skin,
@@ -150,11 +155,6 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
 
                   // HRV vs línea base de 7 días (estado de recuperación)
                   _HrvBaselineCard(skin: skin),
-
-                  const SizedBox(height: 12),
-
-                  // Edad + VO2max estimado (referencias de forma física)
-                  _FitnessCard(skin: skin),
 
                   const SizedBox(height: 32),
 
