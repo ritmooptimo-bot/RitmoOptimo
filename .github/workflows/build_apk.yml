@@ -1,4 +1,4 @@
-name: Build & Deploy APK
+name: Build & Release APK
 
 on:
   push:
@@ -20,10 +20,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Flutter
+      # Fijada a la MISMA versión que compila en local. En 'channel: stable' a
+      # secas, CI cogía una Flutter más nueva y fallaba con
+      # "Could not find method kotlin() ... project ':jni'" (deriva de versión).
+      - name: Setup Flutter (pinned 3.44.2)
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: 3.44.2
           cache: true
 
       - name: Flutter pub get
@@ -32,25 +36,33 @@ jobs:
       - name: Build APK
         run: flutter build apk --release --no-shrink
 
+      # Versión desde pubspec (antes estaba hardcodeada a v4.6).
+      - name: Extract version from pubspec
+        id: ver
+        run: echo "version=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)" >> "$GITHUB_OUTPUT"
+
       - name: Rename APK
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk \
-             build/app/outputs/flutter-apk/ritmooptimo-v4.6.apk
+             build/app/outputs/flutter-apk/ritmooptimo-v${{ steps.ver.outputs.version }}.apk
 
       - name: Upload artifact (backup)
         uses: actions/upload-artifact@v4
         with:
-          name: ritmooptimo-apk
-          path: build/app/outputs/flutter-apk/ritmooptimo-v4.6.apk
+          name: ritmooptimo-apk-v${{ steps.ver.outputs.version }}
+          path: build/app/outputs/flutter-apk/ritmooptimo-v${{ steps.ver.outputs.version }}.apk
           retention-days: 90
 
-      - name: Deploy APK to Hostinger via SSH
+      # Best-effort: si el secreto SSH no está o Hostinger rechaza, NO tumba el
+      # run (el artifact de arriba ya es el respaldo). Evita el spam de fallos.
+      - name: Deploy APK to Hostinger via SSH (best-effort)
+        continue-on-error: true
         uses: appleboy/scp-action@v0.1.7
         with:
           host: 82.198.229.25
           port: 65002
           username: u323441816
           password: ${{ secrets.HOSTINGER_SSH_PASS }}
-          source: build/app/outputs/flutter-apk/ritmooptimo-v4.6.apk
+          source: build/app/outputs/flutter-apk/ritmooptimo-v${{ steps.ver.outputs.version }}.apk
           target: /home/u323441816/domains/ritmooptimo.tech/apk/
           strip_components: 4

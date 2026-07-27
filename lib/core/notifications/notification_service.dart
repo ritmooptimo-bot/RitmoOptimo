@@ -44,7 +44,10 @@ class NotificationService {
       // Si falla, se queda en UTC (peor pero no rompe).
     }
 
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    // small icon dedicado (silueta blanca). Usar @mipmap/ic_launcher como small
+    // icon puede fallar en silencio en algunos Android; un drawable monocromo es
+    // lo robusto.
+    const android = AndroidInitializationSettings('@drawable/ic_stat_checkin');
     const settings = InitializationSettings(android: android);
     await _plugin.initialize(
       settings,
@@ -75,6 +78,7 @@ class NotificationService {
         'checkin_diario',
         'Check-in de bienestar',
         channelDescription: 'Recordatorio diario para tu check-in de bienestar',
+        icon: '@drawable/ic_stat_checkin', // small icon robusto (no ic_launcher)
         importance: Importance.high,
         priority: Priority.high,
         ongoing: true, // fija: no se descarta deslizando
