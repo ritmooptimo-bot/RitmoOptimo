@@ -32,6 +32,18 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // flutter_local_notifications persiste con Gson y R8 le borra las firmas
+            // genéricas → TypeToken crash en el ScheduledNotificationBootReceiver →
+            // la app NO cargaba tras actualizar (MY_PACKAGE_REPLACED) o reiniciar
+            // (BOOT_COMPLETED). Desactivamos R8 en release (el proyecto ya compila con
+            // --no-shrink en CI, así que no shrinkear es aceptable). NO usar
+            // proguard-android-optimize: rompe la init de la app (se cuelga en el splash).
+            // Alternativa futura: re-activar minify con proguard-rules.pro
+            // (keeps de com.dexterous.** + Signature + TypeToken de Gson).
+            isMinifyEnabled = false
+            // Shrink de recursos requiere code-shrinking → al apagar R8 hay que
+            // apagarlo también (si no, Gradle falla en la configuración).
+            isShrinkResources = false
         }
     }
 }
