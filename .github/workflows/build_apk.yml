@@ -1,8 +1,13 @@
 name: Build & Release APK
 
+# Disparo automático (push) DESACTIVADO a propósito. El build en CI falla por un
+# problema de larga data al evaluar el proyecto ':jni'
+# (path_provider_android -> jni/jni_flutter -> "Could not find method kotlin()")
+# que NO ocurre en el build local. La app se compila y distribuye en LOCAL
+# (carpeta APK_BUILDS/), asi que este workflow queda SOLO manual para no generar
+# un correo de fallo en cada push. Para reactivar el push hay que resolver antes
+# el build de ':jni' en CI. Detalle en DOCUMENTACION/MAESTRO/ESTADO_NOTIFICACION_BIENESTAR.md (§7).
 on:
-  push:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
