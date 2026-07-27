@@ -535,13 +535,19 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
           const SizedBox(height: 28),
           SizedBox(
             width: double.infinity,
-            height: 52,
+            height: 54,
             child: ElevatedButton(
               onPressed: () => Navigator.of(context)
                   .pop({'hr': _resultHr, 'hrv': _resultHrv}),
-              child: const Text('USAR ESTOS VALORES',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+              child: const FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('USAR VALORES',
+                    maxLines: 1,
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.0)),
+              ),
             ),
           ),
           const SizedBox(height: 8),

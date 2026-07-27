@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../providers/skin_provider.dart';
 import '../../config/skins/skin_config.dart';
 import '../../core/ble/ble_service.dart';
+import '../../core/hrv/hrv_analysis.dart';
 
 // ── Medición de HRV/FC con BANDA DE PECHO (BLE) ──────────────────────
 // A diferencia de la cámara (estimación PPG), la banda envía los intervalos
@@ -23,8 +23,10 @@ class HrvBandScreen extends ConsumerStatefulWidget {
 enum _Phase { intro, measuring, result }
 
 class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
-  static const int _durationSec = 60;
   static const int _stabilizeSec = 10; // descartar el arranque (asentamiento)
+  static const int _minSec = 30; // mínimo de medición
+  static const int _maxSec = 90; // máximo (se alarga si la banda es ruidosa)
+  static const int _targetBeats = 45; // latidos limpios objetivo
 
   late final BleService _ble;
   _Phase _phase = _Phase.intro;
@@ -34,13 +36,13 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
   StreamSubscription<List<double>>? _rrSub;
   StreamSubscription<int>? _hrSub;
   Timer? _timer;
-  int _remaining = _durationSec;
-  int _elapsed = 0; // segundos transcurridos (para descartar el arranque)
+  int _elapsed = 0; // segundos transcurridos
   int _hrLive = 0;
+  int _cleanBeats = 0; // latidos limpios acumulados (progreso en vivo)
+  final List<int> _hrSamples = []; // FC que reporta la banda (referencia fiable)
 
-  int? _resultHr;
-  int? _resultHrv;
-  bool _noRr = false;
+  HrvResult? _result; // análisis final (Lipponen-Tarvainen)
+  bool _noSignal = false; // no llegó ningún R-R
 
   @override
   void initState() {
@@ -75,68 +77,57 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
 
   void _startMeasuring() {
     _rr.clear();
+    _hrSamples.clear();
     _elapsed = 0;
+    _cleanBeats = 0;
     setState(() {
       _phase = _Phase.measuring;
-      _remaining = _durationSec;
       _hrLive = 0;
-      _noRr = false;
+      _noSignal = false;
+      _result = null;
     });
     // Se descartan los primeros _stabilizeSec (la banda se asienta y el
-    // deportista se relaja) → rMSSD más limpio. Es la práctica de las apps
-    // de HRV; el rMSSD de ~50 s sigue correlacionando casi 1:1 con 5 min.
+    // deportista se relaja). Duración ADAPTATIVA: se mide hasta reunir
+    // _targetBeats latidos limpios; con una banda ruidosa se alarga hasta
+    // _maxSec, y si aun así no llega, el análisis lo marca como no fiable.
     _rrSub = _ble.rrStream.listen((rr) {
       if (_elapsed >= _stabilizeSec) _rr.addAll(rr);
     });
     _hrSub = _ble.hrStream.listen((hr) {
+      if (_elapsed >= _stabilizeSec && hr > 0) _hrSamples.add(hr);
       if (mounted) setState(() => _hrLive = hr);
     });
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
-      setState(() {
-        _elapsed++;
-        _remaining--;
-      });
-      if (_remaining <= 0) {
-        t.cancel();
-        _finish();
+      _elapsed++;
+      if (_elapsed >= _stabilizeSec) {
+        // Cuenta de latidos limpios en vivo (barra de progreso).
+        _cleanBeats = analyzeRr(_rr, reportedHr: _reportedHr()).nClean;
+        if (_elapsed >= _minSec &&
+            (_cleanBeats >= _targetBeats || _elapsed >= _maxSec)) {
+          t.cancel();
+          _finish();
+          return;
+        }
       }
+      setState(() {});
     });
   }
+
+  double _reportedHr() => _hrSamples.isEmpty
+      ? 0
+      : _median(_hrSamples.map((e) => e.toDouble()).toList());
 
   void _finish() {
     _rrSub?.cancel();
     _hrSub?.cancel();
-    final res = _compute();
+    final r = analyzeRr(_rr, reportedHr: _reportedHr());
     if (!mounted) return;
     setState(() {
       _phase = _Phase.result;
-      _resultHr = res.$1 > 0 ? res.$1 : (_hrLive > 0 ? _hrLive : null);
-      _resultHrv = res.$2 > 0 ? res.$2 : null;
-      _noRr = _rr.isEmpty;
+      _result = r;
+      _noSignal = _rr.isEmpty;
     });
-  }
-
-  // rMSSD a partir de los R-R reales de la banda (precisos).
-  (int, int) _compute() {
-    var rr = _rr.where((x) => x >= 300 && x <= 2000).toList();
-    if (rr.length < 8) return (0, 0);
-    final med = _median(rr);
-    if (med <= 0) return (0, 0);
-    rr = rr.where((x) => (x - med).abs() / med < 0.30).toList();
-    if (rr.length < 8) return (0, 0);
-    final meanRr = rr.reduce((a, b) => a + b) / rr.length;
-    final hr = (60000 / meanRr).round();
-    double sq = 0;
-    int m = 0;
-    for (int i = 1; i < rr.length; i++) {
-      final d = rr[i] - rr[i - 1];
-      sq += d * d;
-      m++;
-    }
-    final rmssd = m > 0 ? sqrt(sq / m).round() : 0;
-    if (hr < 30 || hr > 220) return (0, 0);
-    return (hr, rmssd);
   }
 
   double _median(List<double> v) {
@@ -195,7 +186,7 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
         Text(
           'La medición más precisa: tu banda envía los intervalos entre latidos '
           'reales. Colócate la banda (humedece el electrodo), siéntate cómodo y '
-          'quédate quieto y relajado durante $_durationSec segundos.',
+          'quédate quieto y relajado ~1 minuto (se ajusta según la señal).',
           textAlign: TextAlign.center,
           style: TextStyle(color: skin.textSecondary, fontSize: 14, height: 1.4),
         ),
@@ -222,31 +213,40 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
   }
 
   Widget _measuringView(SkinConfig skin) {
+    final progress = (_cleanBeats / _targetBeats).clamp(0.0, 1.0);
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(Icons.favorite, color: skin.error, size: 110),
         const SizedBox(height: 20),
-        Text('$_remaining s',
+        Text(_hrLive > 0 ? '$_hrLive ppm' : 'Recibiendo latidos…',
             style: TextStyle(
-                color: skin.textPrimary,
-                fontSize: 40,
+                color: _hrLive > 0 ? skin.accent : skin.textMuted,
+                fontSize: 34,
                 fontWeight: FontWeight.w800,
                 fontFamily: skin.fontFamilyMono)),
-        const SizedBox(height: 8),
-        Text(
-          _hrLive > 0 ? '$_hrLive ppm' : 'Recibiendo latidos…',
-          style: TextStyle(
-              color: _hrLive > 0 ? skin.accent : skin.textMuted,
-              fontSize: 18,
-              fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 14),
         Text(
             _elapsed < _stabilizeSec
                 ? 'Estabilizando… relájate'
-                : '${_rr.length} intervalos R-R captados',
-            style: TextStyle(color: skin.textMuted, fontSize: 13)),
+                : 'Latidos limpios: $_cleanBeats / $_targetBeats',
+            style: TextStyle(
+                color: skin.textMuted,
+                fontSize: 14,
+                fontWeight: FontWeight.w600)),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: 220,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: _elapsed < _stabilizeSec ? null : progress,
+              backgroundColor: skin.textMuted.withValues(alpha: 0.2),
+              color: skin.accent,
+              minHeight: 6,
+            ),
+          ),
+        ),
         const SizedBox(height: 24),
         Text('Relájate y respira con normalidad. No hables ni te muevas.',
             textAlign: TextAlign.center,
@@ -256,57 +256,14 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
   }
 
   Widget _resultView(SkinConfig skin) {
-    final ok = _resultHr != null;
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(ok ? Icons.check_circle : Icons.error_outline,
-            color: ok ? skin.success : skin.warning, size: 72),
-        const SizedBox(height: 16),
-        if (ok) ...[
-          Text('Medición lista',
-              style: TextStyle(
-                  color: skin.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700)),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _stat(skin, '$_resultHr', 'ppm (FC)', skin.error),
-              const SizedBox(width: 32),
-              _stat(skin, _resultHrv != null ? '$_resultHrv' : '—',
-                  'ms (HRV)', skin.accent),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Text(
-            _resultHrv != null
-                ? 'Medido con banda de pecho: HRV preciso (rMSSD) a partir de los '
-                    'intervalos reales entre latidos.'
-                : 'Tu banda no envía intervalos R-R, así que no se pudo calcular el '
-                    'HRV. La FC sí es válida.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: skin.textMuted, fontSize: 12, height: 1.35),
-          ),
-          const SizedBox(height: 28),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(
-                  {'hr': _resultHr, 'hrv': _resultHrv, 'method': 'ble'}),
-              child: const Text('USAR ESTOS VALORES',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700, letterSpacing: 1.5)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: () => setState(() => _phase = _Phase.intro),
-            child: Text('Repetir', style: TextStyle(color: skin.textMuted)),
-          ),
-        ] else ...[
+    final r = _result;
+    final hasHr = r != null && r.hr > 0;
+    if (!hasHr) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, color: skin.warning, size: 72),
+          const SizedBox(height: 16),
           Text('No se captaron latidos',
               style: TextStyle(
                   color: skin.textPrimary,
@@ -314,12 +271,13 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
                   fontWeight: FontWeight.w700)),
           const SizedBox(height: 10),
           Text(
-            _noRr
+            _noSignal
                 ? 'La banda no envió datos. Comprueba que esté bien colocada '
                     'y humedecida, y vuelve a intentarlo.'
                 : 'Señal insuficiente. Colócate bien la banda, relájate y repite.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: skin.textSecondary, fontSize: 14, height: 1.4),
+            style:
+                TextStyle(color: skin.textSecondary, fontSize: 14, height: 1.4),
           ),
           const SizedBox(height: 24),
           SizedBox(
@@ -333,7 +291,127 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
             ),
           ),
         ],
+      );
+    }
+    final showHrv = r.hasHrv;
+    final msg = switch (r.confidence) {
+      HrvConfidence.high =>
+        'HRV preciso (rMSSD) a partir de los intervalos reales entre latidos.',
+      HrvConfidence.medium =>
+        'Tu banda mete algo de ruido; lo hemos corregido y el HRV es utilizable.',
+      HrvConfidence.low =>
+        '“Señal ruidosa” = tu banda manda algunos latidos con error. Los corregimos, '
+            'así que este HRV es una ESTIMACIÓN (no exacto). Te vale para ver TU '
+            'tendencia día a día con esta misma banda. Para un valor preciso: Polar H10 '
+            'o Garmin HRM.',
+      HrvConfidence.none =>
+        'La señal de esta banda no da para calcular el HRV; solo mostramos la FC (esa '
+            'sí vale). Para el HRV, una banda de latido limpio (Polar H10, Garmin HRM).',
+    };
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(showHrv ? Icons.check_circle : Icons.info_outline,
+            color: showHrv ? skin.success : skin.warning, size: 64),
+        const SizedBox(height: 14),
+        Text('Medición lista',
+            style: TextStyle(
+                color: skin.textPrimary,
+                fontSize: 22,
+                fontWeight: FontWeight.w700)),
+        const SizedBox(height: 18),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _stat(skin, '${r.hr}', 'ppm (FC)', skin.error),
+            const SizedBox(width: 32),
+            _stat(skin, showHrv ? '${r.rmssd}' : '—', 'ms (HRV)', skin.accent),
+          ],
+        ),
+        const SizedBox(height: 14),
+        _qualityBadge(skin, r),
+        const SizedBox(height: 14),
+        Text(msg,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: skin.textMuted, fontSize: 12, height: 1.35)),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          height: 54,
+          child: ElevatedButton(
+            onPressed: () => Navigator.of(context).pop({
+              'hr': r.hr,
+              'hrv': showHrv ? r.rmssd : null,
+              'method': 'ble',
+            }),
+            child: const FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text('USAR VALORES',
+                  maxLines: 1,
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.0)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: () => setState(() => _phase = _Phase.intro),
+          child: Text('Repetir', style: TextStyle(color: skin.textMuted)),
+        ),
       ],
+    );
+  }
+
+  // Veredicto de la banda según la confianza del análisis.
+  Widget _qualityBadge(SkinConfig skin, HrvResult r) {
+    final Color color;
+    final String label;
+    final IconData icon;
+    switch (r.confidence) {
+      case HrvConfidence.high:
+        color = skin.success;
+        label = 'Señal limpia';
+        icon = Icons.check_circle;
+        break;
+      case HrvConfidence.medium:
+        color = skin.warning;
+        label = 'Ruido corregido';
+        icon = Icons.warning_amber_rounded;
+        break;
+      case HrvConfidence.low:
+        color = skin.error;
+        label = 'Estimación';
+        icon = Icons.info_outline;
+        break;
+      case HrvConfidence.none:
+        color = skin.error;
+        label = 'Sin HRV fiable';
+        icon = Icons.error_outline;
+        break;
+    }
+    final cleanPct = (100 - r.grossArtifactPct * 100).round().clamp(0, 100);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text('$label · $cleanPct% limpio',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: color, fontSize: 11.5, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
     );
   }
 
