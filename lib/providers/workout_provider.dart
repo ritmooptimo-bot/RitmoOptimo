@@ -13,6 +13,7 @@ class DashboardState {
   final Map<String, dynamic>? fitness;
   final int pendingAlerts;
   final Map<String, dynamic>? latestWellness;
+  final Map<String, dynamic>? readiness; // "Estado de hoy" (verdict diario)
   final Map<String, dynamic>? sessionStats;
   final Map<String, dynamic>? monthProgress;
   final bool isLoading;
@@ -24,6 +25,7 @@ class DashboardState {
     this.fitness,
     this.pendingAlerts = 0,
     this.latestWellness,
+    this.readiness,
     this.sessionStats,
     this.monthProgress,
     this.isLoading = false,
@@ -36,6 +38,7 @@ class DashboardState {
     Map<String, dynamic>? fitness,
     int? pendingAlerts,
     Map<String, dynamic>? latestWellness,
+    Map<String, dynamic>? readiness,
     Map<String, dynamic>? sessionStats,
     Map<String, dynamic>? monthProgress,
     bool? isLoading,
@@ -47,6 +50,7 @@ class DashboardState {
         fitness:        fitness        ?? this.fitness,
         pendingAlerts:  pendingAlerts  ?? this.pendingAlerts,
         latestWellness: latestWellness ?? this.latestWellness,
+        readiness:      readiness      ?? this.readiness,
         sessionStats:   sessionStats   ?? this.sessionStats,
         monthProgress:  monthProgress  ?? this.monthProgress,
         isLoading:      isLoading      ?? this.isLoading,
@@ -69,6 +73,7 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         fitness:        data['fitness']        as Map<String, dynamic>?,
         pendingAlerts:  (data['pending_alerts'] as num?)?.toInt() ?? 0,
         latestWellness: data['latest_wellness'] as Map<String, dynamic>?,
+        readiness:      data['readiness']       as Map<String, dynamic>?,
         sessionStats:   data['session_stats']  as Map<String, dynamic>?,
         monthProgress:  data['month_progress'] as Map<String, dynamic>?,
         isLoading:      false,

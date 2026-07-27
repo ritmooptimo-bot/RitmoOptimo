@@ -177,6 +177,89 @@ class _Header extends StatelessWidget {
   final DashboardState dashboard;
   const _Header({required this.skin, required this.dashboard});
 
+  // "Estado de hoy" (readiness) bajo el nombre: verde/ámbar/rojo o "haz tu check-in".
+  Widget _readinessChip(BuildContext context) {
+    final r = dashboard.readiness;
+    if (r == null) return const SizedBox.shrink();
+    final status = r['status'] as String? ?? 'pending';
+    final Color color;
+    final String text;
+    final IconData icon;
+    if (status == 'pending') {
+      color = skin.textMuted;
+      text = 'Haz tu check-in de hoy';
+      icon = Icons.radio_button_unchecked;
+    } else {
+      switch (status) {
+        case 'green':
+          color = skin.success;
+          break;
+        case 'red':
+          color = skin.error;
+          break;
+        default:
+          color = skin.warning;
+      }
+      text = r['label'] as String? ?? 'Estado de hoy';
+      icon = Icons.circle;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 5),
+      child: InkWell(
+        onTap: () => _showReadinessInfo(context, r),
+        borderRadius: BorderRadius.circular(20),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 12),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: color,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.info_outline,
+                color: color.withValues(alpha: 0.6), size: 13),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReadinessInfo(BuildContext context, Map<String, dynamic> r) {
+    final status = r['status'] as String? ?? 'pending';
+    final title = status == 'pending'
+        ? 'Tu check-in de hoy'
+        : (r['label'] as String? ?? 'Estado de hoy');
+    final body = status == 'pending'
+        ? 'Aún no has registrado tu bienestar de hoy. Hazlo en la pestaña Bienestar '
+            '(2 min), a ser posible antes de entrenar: así tu plan se adapta a cómo '
+            'estás. Se hace una vez al día.'
+        : (r['advice'] as String? ?? '');
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: skin.backgroundSecondary,
+        title: Text(title,
+            style: TextStyle(
+                color: skin.textPrimary, fontWeight: FontWeight.w700)),
+        content: Text(body,
+            style: TextStyle(color: skin.textSecondary, height: 1.4)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Entendido', style: TextStyle(color: skin.accent)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hour = DateTime.now().hour;
@@ -211,6 +294,7 @@ class _Header extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+                _readinessChip(context),
               ],
             ),
           ),
