@@ -142,6 +142,22 @@ class ApiClient {
     return (r.data as Map<String, dynamic>);
   }
 
+  // ── Edad / fecha de nacimiento + VO2max estimado ─────────────
+  Future<Map<String, dynamic>> getProfileBasics() async {
+    final r = await _dio.get('/athlete/profile-basics');
+    return (r.data as Map<String, dynamic>);
+  }
+
+  Future<int?> saveBirthDate(String isoDate) async {
+    final r = await _dio.post('/athlete/birth-date', data: {'birth_date': isoDate});
+    return (r.data as Map<String, dynamic>)['age'] as int?;
+  }
+
+  Future<Map<String, dynamic>> getVo2max() async {
+    final r = await _dio.get('/athlete/vo2max');
+    return (r.data as Map<String, dynamic>);
+  }
+
   // ── Week Plan (P0) ───────────────────────────────────────────
   Future<Map<String, dynamic>> getWeekPlan() async {
     final r = await _dio.get('/athlete/week',

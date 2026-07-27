@@ -151,6 +151,11 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
                   // HRV vs línea base de 7 días (estado de recuperación)
                   _HrvBaselineCard(skin: skin),
 
+                  const SizedBox(height: 12),
+
+                  // Edad + VO2max estimado (referencias de forma física)
+                  _FitnessCard(skin: skin),
+
                   const SizedBox(height: 32),
 
                   SizedBox(
@@ -408,6 +413,179 @@ class _HrvBaselineCardState extends ConsumerState<_HrvBaselineCard> {
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Edad (con captura de fecha de nacimiento si falta) + VO2max estimado.
+class _FitnessCard extends ConsumerStatefulWidget {
+  final dynamic skin;
+  const _FitnessCard({required this.skin});
+  @override
+  ConsumerState<_FitnessCard> createState() => _FitnessCardState();
+}
+
+class _FitnessCardState extends ConsumerState<_FitnessCard> {
+  Map<String, dynamic>? _basics;
+  Map<String, dynamic>? _vo2;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final basics = await ref.read(apiClientProvider).getProfileBasics();
+      Map<String, dynamic>? vo2;
+      if (basics['age'] != null) {
+        vo2 = await ref
+            .read(apiClientProvider)
+            .getVo2max()
+            .catchError((_) => <String, dynamic>{});
+      }
+      if (mounted) {
+        setState(() {
+          _basics = basics;
+          _vo2 = vo2;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _pickBirthDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime(now.year - 30, 1, 1),
+      firstDate: DateTime(now.year - 100),
+      lastDate: DateTime(now.year - 5),
+      helpText: 'Tu fecha de nacimiento',
+    );
+    if (picked == null) return;
+    final iso =
+        '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+    try {
+      await ref.read(apiClientProvider).saveBirthDate(iso);
+      setState(() => _loading = true);
+      await _load();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo guardar la fecha')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final skin = widget.skin;
+    if (_loading) return const SizedBox.shrink();
+    final age = _basics?['age'];
+
+    // Sin edad → invitación a completarla (para VO2max y referencias).
+    if (age == null) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Icon(Icons.cake_outlined, color: skin.accent, size: 26),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Añade tu fecha de nacimiento',
+                        style: TextStyle(
+                            color: skin.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(
+                        'Con tu edad calculamos tu VO2max estimado y tus referencias por edad.',
+                        style: TextStyle(
+                            color: skin.textSecondary,
+                            fontSize: 12,
+                            height: 1.3)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: _pickBirthDate,
+                child: Text('Añadir', style: TextStyle(color: skin.accent)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Con edad → edad editable + VO2max estimado.
+    final vo2 = _vo2;
+    String? vo2Line;
+    if (vo2 != null && vo2['status'] == 'ok') {
+      vo2Line =
+          'VO₂max estimado ~${vo2['vo2max']} ml/kg/min · ${vo2['category']}';
+    } else if (vo2 != null && vo2['status'] == 'need_resting_hr') {
+      vo2Line = 'Mide tu FC en reposo (arriba) para estimar tu VO₂max.';
+    }
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.fitness_center, color: skin.accent, size: 22),
+                const SizedBox(width: 10),
+                Text('$age años',
+                    style: TextStyle(
+                        color: skin.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700)),
+                const Spacer(),
+                InkWell(
+                  onTap: _pickBirthDate,
+                  child: Row(children: [
+                    Icon(Icons.edit, size: 14, color: skin.textMuted),
+                    const SizedBox(width: 4),
+                    Text('Editar',
+                        style: TextStyle(color: skin.textMuted, fontSize: 12)),
+                  ]),
+                ),
+              ],
+            ),
+            if (vo2Line != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.favorite_border, color: skin.error, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(vo2Line,
+                        style: TextStyle(
+                            color: skin.textSecondary,
+                            fontSize: 12.5,
+                            height: 1.3)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text('Estimación a partir de tu FC en reposo y tu edad.',
+                  style: TextStyle(color: skin.textMuted, fontSize: 11)),
+            ],
           ],
         ),
       ),
