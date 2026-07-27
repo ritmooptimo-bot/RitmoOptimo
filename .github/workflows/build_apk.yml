@@ -39,7 +39,8 @@ jobs:
       # Versión desde pubspec (antes estaba hardcodeada a v4.6).
       - name: Extract version from pubspec
         id: ver
-        run: echo "version=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Rename APK
         run: |
