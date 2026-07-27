@@ -47,10 +47,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (_) {/* si falla, no bloquea la app */}
   }
 
+  // Si el check-in de HOY ya está hecho (por la app o por otro canal, p.ej.
+  // WhatsApp), retira la notificación fija y re-arma la de mañana. Una vez al día.
+  Future<void> _dismissTodayReminder() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final today = DateTime.now().toIso8601String().split('T')[0];
+      if (prefs.getString('notif_checkin_done_date') == today) return;
+      await NotificationService.completedToday();
+      await prefs.setString('notif_checkin_done_date', today);
+    } catch (_) {/* si falla, no bloquea la app */}
+  }
+
   @override
   Widget build(BuildContext context) {
     final skin      = ref.watch(activeSkinProvider);
     final dashboard = ref.watch(dashboardProvider);
+
+    // Cuando el dashboard confirma que el check-in de hoy está hecho, retira la
+    // notificación fija (aunque se haya rellenado desde otro canal).
+    ref.listen(dashboardProvider, (_, next) {
+      if (next.readiness?['doneToday'] == true) _dismissTodayReminder();
+    });
 
     return Scaffold(
       backgroundColor: skin.background,

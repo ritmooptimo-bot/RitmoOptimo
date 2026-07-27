@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/skin_provider.dart';
 import '../../core/network/api_client.dart';
+import '../../core/notifications/notification_service.dart';
 import 'hrv_camera_screen.dart';
 import 'hrv_band_screen.dart';
 
@@ -31,6 +32,22 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
   bool _saving   = false;
   bool _done     = false;
 
+  // "Estado de hoy": si ya hay check-in hoy, al guardar avisamos de sobrescritura.
+  Map<String, dynamic>? _todayReadiness;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTodayReadiness();
+  }
+
+  Future<void> _loadTodayReadiness() async {
+    try {
+      final r = await ref.read(apiClientProvider).getReadiness();
+      if (mounted) setState(() => _todayReadiness = r);
+    } catch (_) {/* si falla, se guarda sin aviso previo */}
+  }
+
   @override
   void dispose() {
     _hrvCtrl.dispose();
@@ -39,6 +56,12 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
   }
 
   Future<void> _save() async {
+    // Una medición al día: si ya hay check-in de hoy, editor con aviso de
+    // sobrescritura (con sus pros y contras) antes de pisar el dato.
+    if (_todayReadiness?['doneToday'] == true) {
+      final ok = await _confirmOverwrite();
+      if (ok != true) return;
+    }
     setState(() => _saving = true);
     try {
       final api = ref.read(apiClientProvider);
@@ -66,6 +89,9 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
         });
       }
 
+      // El check-in de HOY ya está hecho → retira la notificación fija del día.
+      await NotificationService.completedToday();
+
       setState(() { _done = true; _saving = false; });
     } catch (e) {
       setState(() => _saving = false);
@@ -75,6 +101,99 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
         );
       }
     }
+  }
+
+  // Editor/advertencia de sobrescritura: solo hay UN check-in por día; si ya
+  // existe el de hoy, mostramos qué se va a guardar + pros y contras.
+  Future<bool?> _confirmOverwrite() {
+    final skin  = ref.read(activeSkinProvider);
+    final label = _todayReadiness?['label'] as String?;
+    final score = _todayReadiness?['score'];
+    String n(double x) => x.round().toString();
+    String h(double x) => x % 1 == 0 ? x.toInt().toString() : x.toStringAsFixed(1);
+    String metodo() {
+      switch (_hrvMethod) {
+        case 'ble':
+        case 'band':
+          return 'banda';
+        case 'camera_ppg':
+        case 'camera':
+          return 'cámara';
+        default:
+          return 'manual';
+      }
+    }
+    final nuevos = <String>[
+      'Fatiga: ${n(_fatigue)}/5',
+      'Ánimo: ${n(_mood)}/5',
+      'Motivación: ${n(_motivation)}/5',
+      'Sueño: ${h(_sleepH)} h · calidad ${n(_sleepQ)}/5',
+      if (_hrvCtrl.text.isNotEmpty) 'HRV: ${_hrvCtrl.text} ms (${metodo()})',
+      if (_hrCtrl.text.isNotEmpty)  'FC reposo: ${_hrCtrl.text} ppm',
+    ];
+    final actual = label == null
+        ? 'Ya tienes un check-in guardado hoy.'
+        : (score != null
+            ? 'Estado actual de hoy: $label · $score/100.'
+            : 'Estado actual de hoy: $label.');
+
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: skin.backgroundCard,
+        title: Row(children: [
+          Icon(Icons.warning_amber_rounded, color: skin.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('Sobrescribir el check-in de hoy',
+                style: TextStyle(color: skin.textPrimary, fontSize: 17)),
+          ),
+        ]),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Solo se guarda una medición por día. $actual',
+                  style: TextStyle(color: skin.textSecondary, fontSize: 13.5)),
+              const SizedBox(height: 12),
+              Text('Se guardará (y reemplaza lo de hoy):',
+                  style: TextStyle(
+                      color: skin.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13)),
+              const SizedBox(height: 6),
+              ...nuevos.map((s) => Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Text('•  $s',
+                        style:
+                            TextStyle(color: skin.textSecondary, fontSize: 13)),
+                  )),
+              const SizedBox(height: 14),
+              Text('✅  Útil si te equivocaste al meter un dato.',
+                  style: TextStyle(color: skin.success, fontSize: 12.5)),
+              const SizedBox(height: 4),
+              Text(
+                  '⚠️  Pierdes la lectura anterior. Si esta es de peor calidad '
+                  '(p. ej. HRV por cámara sobre una lectura de banda) empeoras '
+                  'el dato del día.',
+                  style: TextStyle(color: skin.warning, fontSize: 12.5)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancelar', style: TextStyle(color: skin.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: skin.warning),
+            child: const Text('Sobrescribir'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
