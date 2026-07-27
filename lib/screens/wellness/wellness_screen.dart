@@ -31,6 +31,8 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
 
   bool _saving   = false;
   bool _done     = false;
+  bool _editing  = false;   // en modo edición del check-in ya hecho
+  bool _loadingToday = true; // cargando el check-in de hoy (ficha vs formulario)
 
   // "Estado de hoy": si ya hay check-in hoy, al guardar avisamos de sobrescritura.
   Map<String, dynamic>? _todayReadiness;
@@ -46,6 +48,7 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
       final r = await ref.read(apiClientProvider).getWellnessToday();
       if (!mounted) return;
       setState(() {
+        _loadingToday = false;
         _todayReadiness = r;
         // Una medición al día: si ya hay check-in de hoy, pre-rellenamos el
         // formulario con lo guardado (sliders + HRV/FC medidos hoy), no defaults.
@@ -63,7 +66,9 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
           if (r['measurement_method'] is String) _hrvMethod = r['measurement_method'] as String;
         }
       });
-    } catch (_) {/* si falla, se guarda sin aviso previo */}
+    } catch (_) {
+      if (mounted) setState(() => _loadingToday = false);
+    }
   }
 
   @override
@@ -214,6 +219,98 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
     );
   }
 
+  // Ficha de SOLO LECTURA del check-in ya hecho hoy: el deportista ve lo que
+  // rellenó sin poder tocar nada, y abajo un botón para modificarlo (con aviso).
+  Widget _buildFicha(dynamic skin) {
+    final r = _todayReadiness ?? {};
+    String n(dynamic x) => x is num ? x.round().toString() : '—';
+    String h(dynamic x) {
+      if (x is! num) return '—';
+      return x % 1 == 0 ? x.toInt().toString() : x.toStringAsFixed(1);
+    }
+    String metodo() {
+      switch (_hrvMethod) {
+        case 'ble':
+        case 'band':
+          return 'banda';
+        case 'camera_ppg':
+        case 'camera':
+          return 'cámara';
+        default:
+          return 'manual';
+      }
+    }
+    final hrv = r['hrv_ms'], fc = r['resting_hr_bpm'];
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ReadinessBanner(skin: skin),
+          Text('Tu check-in de hoy',
+              style: TextStyle(
+                  color: skin.textPrimary, fontSize: 22, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Text('Ya registrado. Estos son los datos que guardaste hoy.',
+              style: TextStyle(color: skin.textMuted, fontSize: 13)),
+          const SizedBox(height: 20),
+          _fichaRow(skin, '⚡', 'Fatiga', '${n(r['fatigue'])}/5'),
+          _fichaRow(skin, '😊', 'Estado de ánimo', '${n(r['mood'])}/5'),
+          _fichaRow(skin, '🔥', 'Motivación', '${n(r['motivation'])}/5'),
+          _fichaRow(skin, '😴', 'Sueño',
+              '${h(r['sleep_hours'])} h · calidad ${n(r['sleep_quality'])}/5'),
+          if (hrv is num) _fichaRow(skin, '❤️', 'HRV', '${hrv.round()} ms · ${metodo()}'),
+          if (fc is num) _fichaRow(skin, '🫀', 'FC en reposo', '${fc.round()} ppm'),
+          const SizedBox(height: 28),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: OutlinedButton.icon(
+              onPressed: () => setState(() => _editing = true),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: skin.accent,
+                side: BorderSide(color: skin.accent),
+              ),
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('MODIFICAR',
+                  style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text('Al modificar se sobrescribe el registro de hoy; te avisaremos antes.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: skin.textMuted, fontSize: 12)),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _fichaRow(dynamic skin, String emoji, String label, String value) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: skin.backgroundCard,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 20)),
+          const SizedBox(width: 12),
+          Text(label, style: TextStyle(color: skin.textSecondary, fontSize: 15)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(value,
+                textAlign: TextAlign.end,
+                style: TextStyle(
+                    color: skin.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final skin = ref.watch(activeSkinProvider);
@@ -227,6 +324,11 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
       ),
       body: _done
           ? _DoneView(skin: skin)
+          : _loadingToday
+          ? Center(child: CircularProgressIndicator(color: skin.accent))
+          : (_todayReadiness?['doneToday'] == true && !_editing)
+          // Ya hecho hoy → ficha de solo lectura + botón Modificar.
+          ? _buildFicha(skin)
           : SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Column(
