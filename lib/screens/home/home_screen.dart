@@ -278,7 +278,7 @@ class _Header extends StatelessWidget {
         : (r['advice'] as String? ?? '');
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         backgroundColor: skin.backgroundSecondary,
         title: Text(title,
             style: TextStyle(
@@ -287,7 +287,7 @@ class _Header extends StatelessWidget {
             style: TextStyle(color: skin.textSecondary, height: 1.4)),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.of(ctx).pop(),
             child: Text('Entendido', style: TextStyle(color: skin.accent)),
           ),
         ],
