@@ -9,6 +9,7 @@ import '../core/gps/gps_service.dart';
 // ── Dashboard State ──────────────────────────────────────────────
 class DashboardState {
   final String? athleteName;
+  final String? discipline; // deporte del plan (running/trail/ciclismo/natacion/triatlon/fuerza)
   final Map<String, dynamic>? todaySession;
   final Map<String, dynamic>? fitness;
   final int pendingAlerts;
@@ -21,6 +22,7 @@ class DashboardState {
 
   const DashboardState({
     this.athleteName,
+    this.discipline,
     this.todaySession,
     this.fitness,
     this.pendingAlerts = 0,
@@ -34,6 +36,7 @@ class DashboardState {
 
   DashboardState copyWith({
     String? athleteName,
+    String? discipline,
     Map<String, dynamic>? todaySession,
     Map<String, dynamic>? fitness,
     int? pendingAlerts,
@@ -46,6 +49,7 @@ class DashboardState {
   }) =>
       DashboardState(
         athleteName:    athleteName    ?? this.athleteName,
+        discipline:     discipline     ?? this.discipline,
         todaySession:   todaySession   ?? this.todaySession,
         fitness:        fitness        ?? this.fitness,
         pendingAlerts:  pendingAlerts  ?? this.pendingAlerts,
@@ -69,6 +73,7 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
       final data = await _api.getDashboard();
       state = DashboardState(
         athleteName:    data['athlete_name']   as String?,
+        discipline:     data['discipline']     as String?,
         todaySession:   data['today_session']  as Map<String, dynamic>?,
         fitness:        data['fitness']        as Map<String, dynamic>?,
         pendingAlerts:  (data['pending_alerts'] as num?)?.toInt() ?? 0,

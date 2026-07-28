@@ -212,6 +212,41 @@ class _Header extends StatelessWidget {
   final DashboardState dashboard;
   const _Header({required this.skin, required this.dashboard});
 
+  // Chip de disciplina junto al nombre: el deporte del plan que lleva el atleta,
+  // para que sepa en todo momento qué está entrenando.
+  static (IconData, String) _disciplineMeta(String d) => switch (d) {
+        'running'  => (Icons.directions_run, 'Running'),
+        'trail'    => (Icons.terrain, 'Trail'),
+        'ciclismo' => (Icons.directions_bike, 'Ciclismo'),
+        'natacion' => (Icons.pool, 'Natación'),
+        'triatlon' => (Icons.sports_score, 'Triatlón'),
+        'fuerza'   => (Icons.fitness_center, 'Fuerza'),
+        _          => (Icons.sports, d.isEmpty ? 'Plan' : '${d[0].toUpperCase()}${d.substring(1)}'),
+      };
+
+  Widget _disciplineChip(BuildContext context) {
+    final d = (dashboard.discipline ?? '').toLowerCase().trim();
+    if (d.isEmpty) return const SizedBox.shrink();
+    final (icon, label) = _disciplineMeta(d);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: skin.accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: skin.accent.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: skin.accent),
+          const SizedBox(width: 4),
+          Text(label,
+              style: TextStyle(color: skin.accent, fontSize: 12, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
   // "Estado de hoy" (readiness) bajo el nombre: verde/ámbar/rojo o "haz tu check-in".
   Widget _readinessChip(BuildContext context) {
     final r = dashboard.readiness;
@@ -316,18 +351,28 @@ class _Header extends StatelessWidget {
                   greeting,
                   style: TextStyle(color: skin.textMuted, fontSize: 13),
                 ),
-                Text(
-                  (dashboard.athleteName == null ||
-                          dashboard.athleteName!.trim().isEmpty)
-                      ? 'Atleta'
-                      : dashboard.athleteName!.trim().split(RegExp(r'\s+')).first,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: skin.textPrimary,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        (dashboard.athleteName == null ||
+                                dashboard.athleteName!.trim().isEmpty)
+                            ? 'Atleta'
+                            : dashboard.athleteName!.trim().split(RegExp(r'\s+')).first,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: skin.textPrimary,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if ((dashboard.discipline ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      _disciplineChip(context),
+                    ],
+                  ],
                 ),
                 _readinessChip(context),
               ],
