@@ -8,6 +8,7 @@ class ChatMessage {
   final String direction; // 'inbound' = cliente | 'outbound' = equipo
   final String text;
   final bool sentByAi;
+  final List<String> channels; // canales por los que fue/vino (hilo único)
   final DateTime timestamp;
 
   const ChatMessage({
@@ -15,16 +16,33 @@ class ChatMessage {
     required this.direction,
     required this.text,
     required this.sentByAi,
+    this.channels = const ['app'],
     required this.timestamp,
   });
 
   bool get isMine => direction == 'inbound';
+
+  static const _names = {
+    'whatsapp': 'WhatsApp', 'telegram': 'Telegram', 'email': 'email', 'app': 'app',
+  };
+
+  // Etiqueta de canal para el hilo único (null = mensaje normal de la app).
+  // Mensaje del atleta por un canal externo → "vía WhatsApp".
+  // Respuesta del equipo difundida a canales externos → "también por WhatsApp, email".
+  String? get channelTag {
+    final others = channels.where((c) => c != 'app').map((c) => _names[c] ?? c).toList();
+    if (others.isEmpty) return null;
+    return isMine ? 'vía ${others.first}' : 'también por ${others.join(', ')}';
+  }
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) => ChatMessage(
         id: j['id'].toString(),
         direction: (j['direction'] as String?) ?? 'outbound',
         text: (j['message_text'] as String?) ?? '',
         sentByAi: j['sent_by_ai'] == true,
+        channels: (j['channels'] is List)
+            ? (j['channels'] as List).map((e) => e.toString()).toList()
+            : [ (j['channel'] as String?) ?? 'app' ],
         timestamp: DateTime.tryParse(j['timestamp']?.toString() ?? '')?.toLocal() ?? DateTime.now(),
       );
 }

@@ -221,6 +221,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 height: 1.35,
               ),
             ),
+            // Etiqueta de canal (hilo único): "vía WhatsApp" / "también por email…"
+            if (m.channelTag != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  m.channelTag!,
+                  style: TextStyle(
+                    color: (mine ? skin.background : skin.textMuted).withValues(alpha: 0.7),
+                    fontSize: 9.5,
+                    fontStyle: FontStyle.italic,
+                    height: 1,
+                  ),
+                ),
+              ),
             const SizedBox(height: 3),
             // Hora abajo a la derecha, discreta (patrón WhatsApp/Telegram)
             Align(
