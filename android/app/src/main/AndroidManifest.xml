@@ -28,6 +28,15 @@
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.flash" android:required="false"/>
 
+    <!-- Micrófono — dictado por voz del comentario post-sesión (speech_to_text, coste 0) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- Android 11+: visibilidad del servicio de reconocimiento de voz del sistema -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <!-- Notificaciones locales — recordatorio diario del check-in de Bienestar -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>

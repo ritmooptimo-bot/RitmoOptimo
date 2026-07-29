@@ -9,6 +9,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/pending_tracks.dart';
 import '../../widgets/route_map_widget.dart';
 import 'hr_recovery_screen.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 // ── Session Complete Screen ──────────────────────────────────────
 // Atleta registra los datos reales al finalizar la sesión.
@@ -38,6 +39,13 @@ class _SessionCompleteScreenState
   double _perceived   = 3;
   String _notes       = '';
 
+  // Dictado por voz del comentario (motor del móvil, coste 0)
+  final _notesCtrl = TextEditingController();
+  final stt.SpeechToText _stt = stt.SpeechToText();
+  bool   _sttReady    = false;
+  bool   _listening   = false;
+  String _notesBefore = '';
+
   bool _sensorDataAvailable = false;
   GpsTrack? _gpsTrack;
 
@@ -46,6 +54,49 @@ class _SessionCompleteScreenState
     super.initState();
     // Rellenar desde sensores tras el primer frame
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoFill());
+    // Preparar el dictado por voz (no pide permiso hasta que se pulsa el micro)
+    _stt.initialize(
+      onStatus: (s) {
+        if (mounted && (s == 'done' || s == 'notListening')) setState(() => _listening = false);
+      },
+      onError: (_) { if (mounted) setState(() => _listening = false); },
+    ).then((ok) { if (mounted) setState(() => _sttReady = ok); }).catchError((_) {});
+  }
+
+  // Micrófono ON/OFF. El texto reconocido se AÑADE a lo ya escrito y queda editable.
+  Future<void> _toggleDictation() async {
+    if (_listening) { await _stt.stop(); if (mounted) setState(() => _listening = false); return; }
+    if (!_sttReady) {
+      final ok = await _stt.initialize().catchError((_) => false);
+      if (!ok) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Tu móvil no permite el dictado por voz (revisa el permiso de micrófono).')));
+        }
+        return;
+      }
+      _sttReady = true;
+    }
+    _notesBefore = _notesCtrl.text.trim();
+    setState(() => _listening = true);
+    await _stt.listen(
+      listenOptions: stt.SpeechListenOptions(
+        localeId: 'es_ES',
+        listenFor: const Duration(minutes: 2),
+        pauseFor: const Duration(seconds: 4),
+        partialResults: true,
+        cancelOnError: true,
+      ),
+      onResult: (r) {
+        final dictado = r.recognizedWords.trim();
+        final texto = (_notesBefore.isEmpty ? dictado : '$_notesBefore $dictado').trim();
+        _notes = texto;
+        _notesCtrl.value = TextEditingValue(
+          text: texto,
+          selection: TextSelection.collapsed(offset: texto.length),
+        );
+      },
+    );
   }
 
   void _autoFill() {
@@ -87,6 +138,8 @@ class _SessionCompleteScreenState
   void dispose() {
     _durationCtrl.dispose();
     _distanceCtrl.dispose();
+    _notesCtrl.dispose();
+    _stt.stop();
     super.dispose();
   }
 
@@ -326,10 +379,40 @@ class _SessionCompleteScreenState
 
             const SizedBox(height: 24),
 
-            // ── Notas ────────────────────────────────────────
-            _SectionTitle('NOTAS (opcional)', skin),
+            // ── Notas (escribe o DICTA por voz — coste 0) ────
+            Row(
+              children: [
+                Expanded(child: _SectionTitle('NOTAS (opcional)', skin)),
+                if (_sttReady)
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: _toggleDictation,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: (_listening ? Colors.red : skin.accent).withValues(alpha: _listening ? 0.15 : 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: (_listening ? Colors.red : skin.accent).withValues(alpha: 0.4)),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(_listening ? Icons.stop_rounded : Icons.mic_rounded,
+                              size: 16, color: _listening ? Colors.red : skin.accent),
+                          const SizedBox(width: 5),
+                          Text(_listening ? 'Escuchando…' : 'Dictar',
+                              style: TextStyle(
+                                  color: _listening ? Colors.red : skin.accent,
+                                  fontSize: 12.5, fontWeight: FontWeight.w700)),
+                        ]),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
             TextField(
+              controller: _notesCtrl,
               onChanged: (v) => _notes = v,
               maxLines: 3,
               style: TextStyle(color: skin.textPrimary),

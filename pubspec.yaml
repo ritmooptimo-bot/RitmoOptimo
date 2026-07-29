@@ -1,7 +1,7 @@
 ﻿name: ritmooptimo_mobile
 description: RitmoOptimo â€” Plataforma de Coaching Deportivo con IA
 publish_to: none
-version: 7.4.48+132
+version: 7.4.49+133
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -48,6 +48,7 @@ dependencies:
   # â”€â”€ Audio-Guided Session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   flutter_tts: ^4.0.2         # Text-to-speech ES-ES para anuncios de entrenamiento
   audioplayers: ^6.0.0        # Beeps WAV en memoria + keepalive iOS silencioso
+  speech_to_text: ^7.0.0      # Dictado por voz del comentario post-sesión (motor del móvil, coste 0)
 
   # â”€â”€ Utils â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   intl: ^0.19.0
