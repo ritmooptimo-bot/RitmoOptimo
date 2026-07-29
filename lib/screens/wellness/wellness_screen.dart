@@ -85,6 +85,20 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
       final ok = await _confirmOverwrite();
       if (ok != true) return;
     }
+    // Los teclados en español usan COMA decimal ("19,5"): double.tryParse la
+    // rechaza → el HRV se guardaba como null EN SILENCIO. Normalizamos y, si aun
+    // así no es un número, avisamos y NO guardamos a medias.
+    double? parseNum(String s) => double.tryParse(s.trim().replaceAll(',', '.'));
+    final hrvVal = _hrvCtrl.text.trim().isEmpty ? null : parseNum(_hrvCtrl.text);
+    final hrVal  = _hrCtrl.text.trim().isEmpty ? null : parseNum(_hrCtrl.text);
+    if ((_hrvCtrl.text.trim().isNotEmpty && hrvVal == null) ||
+        (_hrCtrl.text.trim().isNotEmpty && hrVal == null)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Revisa el HRV/FC: usa solo números (ej. 54 o 54,5).')));
+      }
+      return;
+    }
     setState(() => _saving = true);
     try {
       final api = ref.read(apiClientProvider);
@@ -99,13 +113,11 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
         'recorded_date':  DateTime.now().toIso8601String().split('T')[0],
       });
 
-      // HRV si se introdujo
-      if (_hrvCtrl.text.isNotEmpty || _hrCtrl.text.isNotEmpty) {
+      // HRV si se introdujo (valores ya validados y con coma normalizada)
+      if (hrvVal != null || hrVal != null) {
         await api.postHRV({
-          if (_hrvCtrl.text.isNotEmpty)
-            'hrv_ms': double.tryParse(_hrvCtrl.text),
-          if (_hrCtrl.text.isNotEmpty)
-            'resting_hr_bpm': int.tryParse(_hrCtrl.text),
+          if (hrvVal != null) 'hrv_ms': hrvVal,
+          if (hrVal != null) 'resting_hr_bpm': hrVal.round(),
           'sleep_hours':  _sleepH,
           'sleep_quality': _sleepQ.round(),
           'measurement_method': _hrvMethod,

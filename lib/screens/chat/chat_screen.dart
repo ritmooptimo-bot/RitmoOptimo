@@ -56,7 +56,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final t = _controller.text.trim();
     if (t.isEmpty) return;
     _controller.clear();
-    await ref.read(chatProvider.notifier).send(t);
+    final ok = await ref.read(chatProvider.notifier).send(t);
+    if (!ok && mounted) {
+      // El mensaje NO llegó: devolver el texto al campo para que no se pierda.
+      _controller.text = t;
+      _controller.selection = TextSelection.collapsed(offset: t.length);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo enviar. Revisa tu conexión y vuelve a intentarlo.')));
+    }
     _scrollToBottom();
   }
 

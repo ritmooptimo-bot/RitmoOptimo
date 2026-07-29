@@ -104,9 +104,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  Future<void> send(String text) async {
+  /// Envía el mensaje. Devuelve false si NO llegó al servidor: en ese caso el
+  /// mensaje optimista se retira de la lista (antes se quedaba pintado y el
+  /// siguiente polling lo hacía desaparecer EN SILENCIO — un "me duele la
+  /// rodilla" perdido sin que nadie lo supiera). La pantalla restaura el texto.
+  Future<bool> send(String text) async {
     final t = text.trim();
-    if (t.isEmpty) return;
+    if (t.isEmpty) return true;
 
     // Mensaje optimista mientras responde el servidor
     final temp = ChatMessage(
@@ -123,8 +127,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
       // Recargar: trae el mensaje guardado + la respuesta del equipo (agente)
       await load(silent: true);
       state = state.copyWith(sending: false);
+      return true;
     } catch (_) {
-      state = state.copyWith(sending: false, error: 'No se pudo enviar el mensaje');
+      // Quitar el mensaje que NO llegó (no fingir que se envió)
+      state = state.copyWith(
+        messages: state.messages.where((m) => m.id != temp.id).toList(),
+        sending: false,
+        error: 'No se pudo enviar el mensaje',
+      );
+      return false;
     }
   }
 }

@@ -31,9 +31,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
       state = const AuthState(status: AuthStatus.authenticated);
     } catch (e) {
       final raw = e.toString();
+      // Sin red decía "Email o contraseña incorrectos" — mensaje engañoso que
+      // hace dudar al usuario de su contraseña cuando el problema es la conexión.
+      final esRed = raw.contains('SocketException') ||
+          raw.contains('connection') || raw.contains('Connection') ||
+          raw.contains('timeout') || raw.contains('Network');
       final msg = raw.contains('no está autorizado')
           ? 'Este dispositivo no está autorizado.\nEscanea el QR de activación.'
-          : 'Email o contraseña incorrectos.';
+          : esRed
+              ? 'Sin conexión. Comprueba tu internet e inténtalo de nuevo.'
+              : 'Email o contraseña incorrectos.';
       state = AuthState(status: AuthStatus.unauthenticated, error: msg);
     }
   }

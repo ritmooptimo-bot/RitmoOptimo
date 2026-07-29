@@ -144,6 +144,18 @@ class _SessionCompleteScreenState
   }
 
   Future<void> _save() async {
+    // Teclado español = COMA decimal ("7,86"). double.tryParse la rechazaba y el
+    // `?? 0` convertía la distancia en 0 km EN SILENCIO (kilómetros perdidos).
+    // Normalizamos coma→punto y, si aun así no es número, avisamos sin guardar.
+    double? parseNum(String s) => double.tryParse(s.trim().replaceAll(',', '.'));
+    final durVal  = _durationCtrl.text.trim().isEmpty ? null : parseNum(_durationCtrl.text);
+    final distKm  = _distanceCtrl.text.trim().isEmpty ? null : parseNum(_distanceCtrl.text);
+    if ((_durationCtrl.text.trim().isNotEmpty && durVal == null) ||
+        (_distanceCtrl.text.trim().isNotEmpty && distKm == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Revisa duración/distancia: usa solo números (ej. 45 o 7,86).')));
+      return;
+    }
     setState(() => _saving = true);
     try {
       // v7.2: la subida del track ya NO falla en silencio. Antes un catch vacio
@@ -201,10 +213,8 @@ class _SessionCompleteScreenState
       await ref.read(activeSessionProvider.notifier).completeSession(
         widget.sessionId,
         {
-          'actualDurationMin': int.tryParse(_durationCtrl.text),
-          'actualDistanceM': _distanceCtrl.text.isNotEmpty
-              ? ((double.tryParse(_distanceCtrl.text) ?? 0) * 1000).round()
-              : null,
+          'actualDurationMin': durVal?.round(),
+          'actualDistanceM': distKm != null ? (distKm * 1000).round() : null,
           'actualRpe': _rpe.round(),
           'actualHrAvgBpm': _avgHR > 0 ? _avgHR.round() : null,
           'actualHrMaxBpm': _maxHR > 0 ? _maxHR.round() : null,
