@@ -1,7 +1,7 @@
 ﻿name: ritmooptimo_mobile
 description: RitmoOptimo â€” Plataforma de Coaching Deportivo con IA
 publish_to: none
-version: 7.5.0+135
+version: 7.5.2+137
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

@@ -687,12 +687,19 @@ class _FormStateCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Con fuente grande (Pixel 8 Pro) título y "N ms · N ppm" no caben
+              // juntos en una línea: el título va limpio y los valores de hoy
+              // se integran en la leyenda de la gráfica (nunca desbordan).
               Row(
                 children: [
-                  Text('ESTADO DE FORMA',
-                      style: TextStyle(
-                          color: skin.textMuted, fontSize: 11, letterSpacing: 1.5)),
-                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text('ESTADO DE FORMA',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: skin.textMuted, fontSize: 11, letterSpacing: 1.5)),
+                  ),
+                  const SizedBox(width: 4),
                   GestureDetector(
                     onTap: () => _mostrarInfo(context, color),
                     behavior: HitTestBehavior.opaque,
@@ -701,15 +708,6 @@ class _FormStateCard extends StatelessWidget {
                       child: Icon(Icons.info_outline, size: 15, color: skin.textMuted),
                     ),
                   ),
-                  const Spacer(),
-                  if (todayHrv != null)
-                    Text(
-                      '${todayHrv.round()} ms${todayRhr != null ? ' · ${todayRhr.round()} ppm' : ''}',
-                      style: TextStyle(
-                          color: skin.textMuted,
-                          fontSize: 11,
-                          fontFamily: 'monospace'),
-                    ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -786,7 +784,8 @@ class _FormStateCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Tus últimas ${serie.length} tomas · franja = tu banda (${bandLow.round()}-${bandHigh.round()} ms)',
+                  '${todayHrv != null ? 'Hoy ${todayHrv.round()} ms${todayRhr != null ? ' · ${todayRhr.round()} ppm' : ''} · ' : ''}'
+                  'últimas ${serie.length} tomas · franja = tu banda (${bandLow.round()}-${bandHigh.round()} ms)',
                   style: TextStyle(color: skin.textMuted, fontSize: 10),
                 ),
               ],
