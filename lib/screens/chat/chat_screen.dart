@@ -40,11 +40,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.dispose();
   }
 
+  // Con la lista en reverse:true el "final del chat" es offset 0: el scroll
+  // nace ya pegado a los últimos mensajes sin depender de maxScrollExtent
+  // (que ListView.builder ESTIMA mientras construye → antes el animateTo se
+  // quedaba a medio camino y aterrizabas en un mensaje del sábado).
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
         _scroll.animateTo(
-          _scroll.position.maxScrollExtent,
+          0,
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOut,
         );
@@ -95,11 +99,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     ? _empty(skin)
                     : ListView.builder(
                         controller: _scroll,
-                        padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
+                        // reverse: el chat SIEMPRE nace anclado a los últimos
+                        // mensajes (patrón WhatsApp), entres cuando entres.
+                        reverse: true,
+                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 16),
                         itemCount: chat.messages.length,
                         itemBuilder: (_, i) {
-                          final m = chat.messages[i];
-                          final anterior = i > 0 ? chat.messages[i - 1] : null;
+                          // Con reverse, el índice 0 pinta ABAJO → mapear al
+                          // orden cronológico real de la lista.
+                          final idx = chat.messages.length - 1 - i;
+                          final m = chat.messages[idx];
+                          final anterior = idx > 0 ? chat.messages[idx - 1] : null;
                           // Separador de día cuando cambia la fecha (como WhatsApp)
                           final nuevoDia = anterior == null ||
                               !_mismoDia(anterior.timestamp, m.timestamp);
@@ -158,12 +168,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final hoy   = DateTime(ahora.year, ahora.month, ahora.day);
     final dia   = DateTime(t.year, t.month, t.day);
     final dif   = hoy.difference(dia).inDays;
-    if (dif == 0) return 'HOY';
-    if (dif == 1) return 'AYER';
-    // Dentro de la semana: solo el día ("miércoles"). Más atrás: fecha completa.
-    if (dif < 7) return _dias[t.weekday - 1].toUpperCase();
-    if (t.year == ahora.year) return '${t.day} de ${_meses[t.month - 1]}';
-    return '${t.day} de ${_meses[t.month - 1]} de ${t.year}';
+    // SIEMPRE con día, mes y año: un "SÁBADO" a secas no dice QUÉ sábado
+    // (petición del usuario tras perderse buscando un mensaje).
+    final fecha = '${t.day} de ${_meses[t.month - 1]} de ${t.year}';
+    if (dif == 0) return 'HOY · $fecha';
+    if (dif == 1) return 'AYER · $fecha';
+    return '${_dias[t.weekday - 1]}, $fecha';
   }
 
   String _hora(DateTime t) =>
