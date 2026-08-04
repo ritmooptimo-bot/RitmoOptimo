@@ -205,6 +205,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  // Los agentes escriben con Markdown ligero (*negrita* estilo WhatsApp y
+  // **negrita**) y el chat pintaba los asteriscos tal cual. Se parsean a
+  // negrita REAL en el pintado: vale para todo el historial ya guardado y no
+  // toca los demás canales (Telegram/WhatsApp sí interpretan esos asteriscos).
+  // Un asterisco sin pareja se queda literal (sin sorpresas).
+  static final _mdBold = RegExp(r'\*\*(.+?)\*\*|\*([^*\n]+)\*');
+  List<TextSpan> _spansMd(String text) {
+    final spans = <TextSpan>[];
+    var last = 0;
+    for (final match in _mdBold.allMatches(text)) {
+      if (match.start > last) {
+        spans.add(TextSpan(text: text.substring(last, match.start)));
+      }
+      spans.add(TextSpan(
+        text: match.group(1) ?? match.group(2),
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ));
+      last = match.end;
+    }
+    if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
+    return spans;
+  }
+
   Widget _bubble(SkinConfig skin, ChatMessage m, {bool agrupado = false}) {
     final mine = m.isMine;
     final colorHora = mine
@@ -230,8 +253,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              m.text,
+            Text.rich(
+              TextSpan(children: _spansMd(m.text)),
               style: TextStyle(
                 color: mine ? skin.background : skin.textPrimary,
                 fontSize: 14,
