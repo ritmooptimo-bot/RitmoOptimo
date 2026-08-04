@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -39,12 +40,18 @@ class _SessionCompleteScreenState
   double _perceived   = 3;
   String _notes       = '';
 
-  // Dictado por voz del comentario (motor del móvil, coste 0)
+  // Dictado por voz del comentario (motor del móvil, coste 0).
+  // SIN límite de tiempo: lo termina EL DEPORTISTA (botón) o, tras ~7 s sin
+  // oír voz, se le PREGUNTA si quiere terminar (antes cortaba solo a los 4 s
+  // de pausa o a los 2 min — se quedaba corto a mitad de frase).
   final _notesCtrl = TextEditingController();
   final stt.SpeechToText _stt = stt.SpeechToText();
   bool   _sttReady    = false;
-  bool   _listening   = false;
+  bool   _listening   = false; // el MOTOR está escuchando ahora (segmento)
+  bool   _dictating   = false; // el DEPORTISTA está dictando (hasta que él pare)
+  bool   _askingStop  = false; // diálogo de silencio en pantalla
   String _notesBefore = '';
+  Timer? _silenceTimer;
 
   bool _sensorDataAvailable = false;
   GpsTrack? _gpsTrack;
@@ -57,15 +64,30 @@ class _SessionCompleteScreenState
     // Preparar el dictado por voz (no pide permiso hasta que se pulsa el micro)
     _stt.initialize(
       onStatus: (s) {
-        if (mounted && (s == 'done' || s == 'notListening')) setState(() => _listening = false);
+        if (!mounted) return;
+        if (s == 'done' || s == 'notListening') {
+          setState(() => _listening = false);
+          // El motor nativo de Android corta solo cada pocos segundos: si el
+          // DEPORTISTA no ha terminado, se re-arma el siguiente segmento y el
+          // texto se acumula → dictado continuo de verdad.
+          if (_dictating && !_askingStop) _startSegment();
+        }
       },
-      onError: (_) { if (mounted) setState(() => _listening = false); },
+      onError: (_) {
+        if (!mounted) return;
+        setState(() => _listening = false);
+        if (_dictating && !_askingStop) {
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (mounted && _dictating && !_askingStop && !_listening) _startSegment();
+          });
+        }
+      },
     ).then((ok) { if (mounted) setState(() => _sttReady = ok); }).catchError((_) {});
   }
 
-  // Micrófono ON/OFF. El texto reconocido se AÑADE a lo ya escrito y queda editable.
+  // Micrófono ON/OFF a voluntad del DEPORTISTA. El texto se AÑADE y queda editable.
   Future<void> _toggleDictation() async {
-    if (_listening) { await _stt.stop(); if (mounted) setState(() => _listening = false); return; }
+    if (_dictating) { await _stopDictation(); return; }
     if (!_sttReady) {
       final ok = await _stt.initialize().catchError((_) => false);
       if (!ok) {
@@ -77,18 +99,28 @@ class _SessionCompleteScreenState
       }
       _sttReady = true;
     }
+    setState(() => _dictating = true);
+    _armSilenceTimer();
+    await _startSegment();
+  }
+
+  // Un "segmento" = una escucha del motor. Se encadenan hasta que el atleta pare.
+  Future<void> _startSegment() async {
+    if (!_dictating || _askingStop || _listening) return;
+    // Lo ya reconocido (o tecleado) es la BASE: el segmento nuevo se añade encima.
     _notesBefore = _notesCtrl.text.trim();
     setState(() => _listening = true);
     await _stt.listen(
       listenOptions: stt.SpeechListenOptions(
         localeId: 'es_ES',
-        listenFor: const Duration(minutes: 2),
-        pauseFor: const Duration(seconds: 4),
+        listenFor: const Duration(minutes: 10), // techo de seguridad, NO el que corta
+        pauseFor: const Duration(seconds: 8),   // si el motor corta antes, re-armamos
         partialResults: true,
         cancelOnError: true,
       ),
       onResult: (r) {
         final dictado = r.recognizedWords.trim();
+        if (dictado.isNotEmpty) _armSilenceTimer(); // hay voz → reinicia el contador
         final texto = (_notesBefore.isEmpty ? dictado : '$_notesBefore $dictado').trim();
         _notes = texto;
         _notesCtrl.value = TextEditingValue(
@@ -97,6 +129,52 @@ class _SessionCompleteScreenState
         );
       },
     );
+  }
+
+  void _armSilenceTimer() {
+    _silenceTimer?.cancel();
+    _silenceTimer = Timer(const Duration(seconds: 7), _askStopForSilence);
+  }
+
+  Future<void> _stopDictation() async {
+    _silenceTimer?.cancel();
+    _dictating = false;
+    await _stt.stop();
+    if (mounted) setState(() => _listening = false);
+  }
+
+  // ~7 s sin oír voz → se PREGUNTA (no se corta en seco). Si mientras tanto
+  // vuelve a hablar, el texto sigue entrando; "Seguir" re-arma el contador.
+  Future<void> _askStopForSilence() async {
+    if (!mounted || !_dictating || _askingStop) return;
+    _askingStop = true;
+    final seguir = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Terminamos el dictado?'),
+        content: const Text('Llevo unos segundos sin oírte. Si ya está todo dicho, '
+            'lo dejamos aquí; el texto queda en el cuadro y puedes retocarlo.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Seguir dictando'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Terminar'),
+          ),
+        ],
+      ),
+    );
+    _askingStop = false;
+    if (!mounted) return;
+    if (seguir == true && _dictating) {
+      _armSilenceTimer();
+      if (!_listening) _startSegment(); // por si el motor se durmió durante el diálogo
+    } else {
+      await _stopDictation();
+    }
   }
 
   void _autoFill() {
@@ -136,6 +214,8 @@ class _SessionCompleteScreenState
 
   @override
   void dispose() {
+    _silenceTimer?.cancel();
+    _dictating = false;
     _durationCtrl.dispose();
     _distanceCtrl.dispose();
     _notesCtrl.dispose();
@@ -402,17 +482,17 @@ class _SessionCompleteScreenState
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: (_listening ? Colors.red : skin.accent).withValues(alpha: _listening ? 0.15 : 0.12),
+                          color: (_dictating ? Colors.red : skin.accent).withValues(alpha: _dictating ? 0.15 : 0.12),
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: (_listening ? Colors.red : skin.accent).withValues(alpha: 0.4)),
+                          border: Border.all(color: (_dictating ? Colors.red : skin.accent).withValues(alpha: 0.4)),
                         ),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(_listening ? Icons.stop_rounded : Icons.mic_rounded,
-                              size: 16, color: _listening ? Colors.red : skin.accent),
+                          Icon(_dictating ? Icons.stop_rounded : Icons.mic_rounded,
+                              size: 16, color: _dictating ? Colors.red : skin.accent),
                           const SizedBox(width: 5),
-                          Text(_listening ? 'Escuchando…' : 'Dictar',
+                          Text(_dictating ? 'Terminar' : 'Dictar',
                               style: TextStyle(
-                                  color: _listening ? Colors.red : skin.accent,
+                                  color: _dictating ? Colors.red : skin.accent,
                                   fontSize: 12.5, fontWeight: FontWeight.w700)),
                         ]),
                       ),

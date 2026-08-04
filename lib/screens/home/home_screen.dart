@@ -1,3 +1,4 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -147,6 +148,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 )
               else ...[
+                // ── ESTADO DE FORMA (tendencia HRV+FC de sus tomas) ──
+                if (dashboard.formState != null &&
+                    dashboard.formState!['state'] != 'sin_datos')
+                  SliverToBoxAdapter(
+                    child: _FormStateCard(
+                        skin: skin, form: dashboard.formState!),
+                  ),
+
                 // ── Forma deportiva (CTL/ATL/TSB) ──────────
                 if (dashboard.fitness != null)
                   SliverToBoxAdapter(
@@ -593,6 +602,221 @@ class _AlertCard extends StatelessWidget {
 }
 
 // ── Fitness Card (CTL/ATL/TSB) ──────────────────────────────────
+// ── ESTADO DE FORMA — tendencia de las tomas matinales HRV+FC ─────
+// Responde "¿cómo vengo asimilando la carga?" (el chip de readiness ya
+// responde "¿cómo llego HOY?"). Método línea base lnRMSSD 7d ± SWC + FC
+// vs mediana propia; el backend clasifica y aquí solo se PINTA:
+//   fresco 🔵 · equilibrado 🟢 · vigilar 🟠 · sobrecarga 🔴 · construyendo ⚪
+class _FormStateCard extends StatelessWidget {
+  final SkinConfig skin;
+  final Map<String, dynamic> form;
+  const _FormStateCard({required this.skin, required this.form});
+
+  static double? _d(dynamic v) =>
+      v == null ? null : (v is num ? v.toDouble() : double.tryParse(v.toString().replaceAll(',', '.')));
+
+  (Color, IconData) _estilo(String state) => switch (state) {
+        'fresco'      => (const Color(0xFF4FC3F7), Icons.flash_on_rounded),
+        'equilibrado' => (skin.success, Icons.check_circle_rounded),
+        'vigilar'     => (skin.warning, Icons.remove_red_eye_rounded),
+        'sobrecarga'  => (skin.error, Icons.battery_alert_rounded),
+        _             => (skin.textMuted, Icons.hourglass_bottom_rounded),
+      };
+
+  void _mostrarInfo(BuildContext context, Color color) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: skin.backgroundSecondary,
+        title: Text('Tu estado de forma',
+            style: TextStyle(color: skin.textPrimary, fontWeight: FontWeight.w700, fontSize: 17)),
+        content: SingleChildScrollView(
+          child: Text(
+            'Se calcula con tus tomas matinales de HRV y pulso en reposo.\n\n'
+            'Lo que importa no es el número de un día, sino cómo se mueve respecto '
+            'a TU banda personal (media de tus últimos 7 días). La franja sombreada '
+            'de la gráfica es esa banda.\n\n'
+            '🔵 Fresco — HRV por encima de tu banda y pulso bajo: supercompensado.\n'
+            '🟢 Equilibrado — dentro de tu banda: asimilas bien la carga.\n'
+            '🟠 Vigilar — un día por debajo o pulso algo alto: sin alarma, escucha al cuerpo.\n'
+            '🔴 Sobrecarga — varios días por debajo o HRV bajo + pulso alto: toca recuperar.\n\n'
+            'Mide cada mañana al despertar, antes de levantarte, siempre con el mismo método: '
+            'así la banda es fiable y tu entrenador ajusta el plan con datos de verdad.',
+            style: TextStyle(color: skin.textSecondary, height: 1.45, fontSize: 13.5),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Entendido', style: TextStyle(color: color)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = form['state'] as String? ?? 'construyendo';
+    final (color, icon) = _estilo(state);
+    final titulo = form['titulo'] as String? ?? 'Estado de forma';
+    final explicacion = form['explicacion'] as String? ?? '';
+    final todayHrv = _d(form['todayHrv']);
+    final todayRhr = _d(form['todayRhr']);
+    final baseline = form['baseline'] as Map<String, dynamic>?;
+    final bandLow = _d(baseline?['low']);
+    final bandHigh = _d(baseline?['high']);
+    final serie = (form['series'] as List?)
+            ?.map((e) => _d((e as Map)['hrv']))
+            .whereType<double>()
+            .toList() ??
+        const <double>[];
+    final nDays = (form['nDays'] as num?)?.toInt() ?? 0;
+    final daysNeeded = (form['daysNeeded'] as num?)?.toInt() ?? 7;
+    final construyendo = state == 'construyendo';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Card(
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border(left: BorderSide(color: color, width: 3)),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text('ESTADO DE FORMA',
+                      style: TextStyle(
+                          color: skin.textMuted, fontSize: 11, letterSpacing: 1.5)),
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () => _mostrarInfo(context, color),
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(Icons.info_outline, size: 15, color: skin.textMuted),
+                    ),
+                  ),
+                  const Spacer(),
+                  if (todayHrv != null)
+                    Text(
+                      '${todayHrv.round()} ms${todayRhr != null ? ' · ${todayRhr.round()} ppm' : ''}',
+                      style: TextStyle(
+                          color: skin.textMuted,
+                          fontSize: 11,
+                          fontFamily: 'monospace'),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: color, size: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(titulo,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: color, fontSize: 15.5, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+              // Sparkline de sus tomas con SU banda personal sombreada
+              if (serie.length >= 2 && bandLow != null && bandHigh != null) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 54,
+                  child: LineChart(
+                    LineChartData(
+                      minY: [serie.reduce((a, b) => a < b ? a : b), bandLow]
+                              .reduce((a, b) => a < b ? a : b) *
+                          0.85,
+                      maxY: [serie.reduce((a, b) => a > b ? a : b), bandHigh]
+                              .reduce((a, b) => a > b ? a : b) *
+                          1.12,
+                      gridData: const FlGridData(show: false),
+                      titlesData: const FlTitlesData(show: false),
+                      borderData: FlBorderData(show: false),
+                      lineTouchData: const LineTouchData(enabled: false),
+                      rangeAnnotations: RangeAnnotations(
+                        horizontalRangeAnnotations: [
+                          HorizontalRangeAnnotation(
+                            y1: bandLow,
+                            y2: bandHigh,
+                            color: color.withValues(alpha: 0.10),
+                          ),
+                        ],
+                      ),
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: [
+                            for (var i = 0; i < serie.length; i++)
+                              FlSpot(i.toDouble(), serie[i]),
+                          ],
+                          isCurved: true,
+                          curveSmoothness: 0.3,
+                          preventCurveOverShooting: true,
+                          barWidth: 2,
+                          color: color,
+                          dotData: FlDotData(
+                            show: true,
+                            getDotPainter: (spot, pct, bar, index) =>
+                                FlDotCirclePainter(
+                              radius: index == serie.length - 1 ? 3.2 : 1.8,
+                              color: color,
+                              strokeWidth: 0,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Tus últimas ${serie.length} tomas · franja = tu banda (${bandLow.round()}-${bandHigh.round()} ms)',
+                  style: TextStyle(color: skin.textMuted, fontSize: 10),
+                ),
+              ],
+              // Aún construyendo la base → barra de progreso hacia las 7 tomas
+              if (construyendo) ...[
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: daysNeeded > 0 ? (nDays / daysNeeded).clamp(0.0, 1.0) : 0,
+                    minHeight: 6,
+                    backgroundColor: skin.textMuted.withValues(alpha: 0.15),
+                    valueColor: AlwaysStoppedAnimation(skin.accent),
+                  ),
+                ),
+              ],
+              if (explicacion.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(explicacion,
+                    style: TextStyle(
+                        color: skin.textSecondary, fontSize: 12.5, height: 1.4)),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _FitnessCard extends StatelessWidget {
   final SkinConfig skin;
   final Map<String, dynamic> fitness;
