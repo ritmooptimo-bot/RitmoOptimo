@@ -607,10 +607,23 @@ class _AlertCard extends StatelessWidget {
 // responde "¿cómo llego HOY?"). Método línea base lnRMSSD 7d ± SWC + FC
 // vs mediana propia; el backend clasifica y aquí solo se PINTA:
 //   fresco 🔵 · equilibrado 🟢 · vigilar 🟠 · sobrecarga 🔴 · construyendo ⚪
-class _FormStateCard extends StatelessWidget {
+class _FormStateCard extends StatefulWidget {
   final SkinConfig skin;
   final Map<String, dynamic> form;
   const _FormStateCard({required this.skin, required this.form});
+
+  @override
+  State<_FormStateCard> createState() => _FormStateCardState();
+}
+
+class _FormStateCardState extends State<_FormStateCard> {
+  SkinConfig get skin => widget.skin;
+  Map<String, dynamic> get form => widget.form;
+
+  // El análisis del entrenador va PLEGADO (menos saturación en Inicio)…
+  // salvo en SOBRECARGA: ese consejo no se esconde detrás de un toque.
+  late bool _expanded =
+      (widget.form['state'] as String? ?? '') == 'sobrecarga';
 
   static double? _d(dynamic v) =>
       v == null ? null : (v is num ? v.toDouble() : double.tryParse(v.toString().replaceAll(',', '.')));
@@ -803,10 +816,32 @@ class _FormStateCard extends StatelessWidget {
                 ),
               ],
               if (explicacion.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Text(explicacion,
-                    style: TextStyle(
-                        color: skin.textSecondary, fontSize: 12.5, height: 1.4)),
+                if (_expanded) ...[
+                  const SizedBox(height: 10),
+                  Text(explicacion,
+                      style: TextStyle(
+                          color: skin.textSecondary, fontSize: 12.5, height: 1.4)),
+                ],
+                const SizedBox(height: 4),
+                InkWell(
+                  onTap: () => setState(() => _expanded = !_expanded),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_expanded ? 'Ver menos' : 'Ver análisis del entrenador',
+                            style: TextStyle(
+                                color: color,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600)),
+                        Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                            size: 16, color: color),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ],
           ),
