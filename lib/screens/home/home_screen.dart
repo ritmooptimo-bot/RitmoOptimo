@@ -312,7 +312,6 @@ class _Header extends StatelessWidget {
             const SizedBox(width: 4),
             Icon(Icons.info_outline,
                 color: color.withValues(alpha: 0.6), size: 13),
-            _rachaChip(),
           ],
         ),
       ),
@@ -322,11 +321,14 @@ class _Header extends StatelessWidget {
   /// RACHA de mañanas seguidas midiendo. El hábito diario es lo que sostiene
   /// todo lo demás: sin tomas no hay línea base, y sin línea base el estado de
   /// forma y el agente van a ciegas. A partir de 3 días ya merece celebrarse.
+  ///
+  /// En su PROPIA línea: metida junto al estado del día le comía el ancho y
+  /// "Listo para apretar" salía cortado con puntos suspensivos.
   Widget _rachaChip() {
     final n = (dashboard.formState?['racha'] as num?)?.toInt() ?? 0;
     if (n < 3) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(left: 10),
+      padding: const EdgeInsets.only(top: 6),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
@@ -414,6 +416,7 @@ class _Header extends StatelessWidget {
                   ],
                 ),
                 _readinessChip(context),
+                _rachaChip(),
               ],
             ),
           ),
