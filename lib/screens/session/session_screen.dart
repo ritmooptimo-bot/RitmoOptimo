@@ -51,6 +51,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         if (mounted) {
           setState(() => _loadingSession = false);
           _initAudioController();
+          // REENTRAR EN UNA SESIÓN EN MARCHA. El cronómetro solo arrancaba desde
+          // el botón COMENZAR, que ya no está visible si la sesión corre: al
+          // volver a entrar el tiempo se quedaba clavado y la duración que se
+          // autorrellenaba al terminar era falsa. Se reengancha el reloj.
+          if (ref.read(activeSessionProvider).isRunning) _startTimer();
         }
       }
     });
@@ -69,8 +74,26 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _timer = null;
     _gpsMapSub?.cancel();
     _precSub?.cancel();
+
+    // SALIR SIN FINALIZAR DEJABA EL GPS GRABANDO PARA SIEMPRE.
+    //
+    // El dispose cancelaba los temporizadores de la pantalla pero nunca paraba el
+    // GPS: si el atleta pulsaba la flecha atrás quedaban vivos el servicio en
+    // primer plano con wakelock, el vigilante pidiendo posición cada 3 s y el
+    // flujo a 2 Hz, hasta que cerrase la app. Batería drenada sin enterarse.
+    // (Al FINALIZAR no se duplica: _onFinish ya lo paró y gpsActive es false.)
+    try {
+      if (ref.read(activeSessionProvider).gpsActive) {
+        ref.read(activeSessionProvider.notifier).stopGPS();
+      }
+    } catch (_) {
+      // Nunca romper el desmontaje de la pantalla por esto.
+    }
+
+    _audioCueService.stopSession();
     _audioCueService.dispose();
     super.dispose();
   }

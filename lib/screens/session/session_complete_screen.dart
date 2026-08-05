@@ -307,7 +307,13 @@ class _SessionCompleteScreenState
       );
       if (mounted) {
         ref.read(dashboardProvider.notifier).load();
-        context.go(AppRoutes.home);
+        // AL RESUMEN, NO A INICIO.
+        //
+        // La pantalla de resumen —mapa del recorrido, parciales por km, zonas,
+        // medalla al mejor kilómetro y mensaje del entrenador— estaba construida
+        // y el flujo la esquivaba: se guardaba el entreno y se volvía al panel.
+        // El atleta no llegaba a ver nunca lo mejor de su propia sesión.
+        context.pushReplacement('/session/${widget.sessionId}/summary');
       }
     } catch (e) {
       if (mounted) {

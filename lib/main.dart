@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:app_links/app_links.dart';
 import 'config/router.dart';
 import 'providers/skin_provider.dart';
+import 'providers/auth_provider.dart';
 import 'core/notifications/notification_service.dart';
 
 void main() async {
@@ -51,6 +52,10 @@ class _RitmoOptimoAppState extends ConsumerState<RitmoOptimoApp> {
     // v7.2: sesion perdida sin remedio (401 + refresh fallido) → a login con
     // mensaje humano, nunca el DioException crudo en pantalla.
     ApiClient.onAuthLost = () {
+      // Marcar la sesión como perdida ANTES de navegar: si no, el estado seguía
+      // en "autenticado" y el router devolvía al usuario a Inicio de inmediato,
+      // dejando la app en bucle de 401 sin poder volver a loguearse.
+      ref.read(authProvider.notifier).sessionLost();
       final router = ref.read(routerProvider);
       router.go(AppRoutes.login);
     };

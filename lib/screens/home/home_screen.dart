@@ -148,28 +148,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 )
               else ...[
-                // ── ESTADO DE FORMA (tendencia HRV+FC de sus tomas) ──
-                if (dashboard.formState != null &&
-                    dashboard.formState!['state'] != 'sin_datos')
-                  SliverToBoxAdapter(
-                    child: _FormStateCard(
-                        skin: skin, form: dashboard.formState!),
-                  ),
-
-                // ── Forma deportiva (CTL/ATL/TSB) ──────────
-                if (dashboard.fitness != null)
-                  SliverToBoxAdapter(
-                    child: _FitnessCard(skin: skin, fitness: dashboard.fitness!),
-                  ),
-
-                // ── Progreso del mes ────────────────────────
-                if (dashboard.monthProgress != null)
-                  SliverToBoxAdapter(
-                    child: _MonthProgressCard(
-                      skin: skin,
-                      progress: dashboard.monthProgress!,
-                    ),
-                  ),
+                // ── ORDEN DE LA PANTALLA: PRIMERO LO QUE HAY QUE HACER ──
+                //
+                // Antes la sesión del día era la CUARTA tarjeta: por delante iban
+                // tres bloques analíticos (estado de forma, CTL/ATL/TSB y progreso
+                // del mes), así que empezar a entrenar exigía desplazarse. Ahora
+                // la única acción del día abre la pantalla, el premio de
+                // constancia va detrás, y lo analítico cierra.
 
                 // ── Sesión de hoy ───────────────────────────
                 SliverToBoxAdapter(
@@ -195,6 +180,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 SliverToBoxAdapter(
                   child: _FreeTrainingButton(skin: skin),
                 ),
+
+                // ── Progreso del mes (el premio de constancia) ──
+                if (dashboard.monthProgress != null)
+                  SliverToBoxAdapter(
+                    child: _MonthProgressCard(
+                      skin: skin,
+                      progress: dashboard.monthProgress!,
+                    ),
+                  ),
+
+                // ── ESTADO DE FORMA (tendencia HRV+FC de sus tomas) ──
+                if (dashboard.formState != null &&
+                    dashboard.formState!['state'] != 'sin_datos')
+                  SliverToBoxAdapter(
+                    child: _FormStateCard(
+                        skin: skin, form: dashboard.formState!),
+                  ),
+
+                // ── Forma deportiva (CTL/ATL/TSB) ──────────
+                if (dashboard.fitness != null)
+                  SliverToBoxAdapter(
+                    child: _FitnessCard(skin: skin, fitness: dashboard.fitness!),
+                  ),
 
                 // ── Bienestar ───────────────────────────────
                 if (dashboard.latestWellness != null)
@@ -304,8 +312,30 @@ class _Header extends StatelessWidget {
             const SizedBox(width: 4),
             Icon(Icons.info_outline,
                 color: color.withValues(alpha: 0.6), size: 13),
+            _rachaChip(),
           ],
         ),
+      ),
+    );
+  }
+
+  /// RACHA de mañanas seguidas midiendo. El hábito diario es lo que sostiene
+  /// todo lo demás: sin tomas no hay línea base, y sin línea base el estado de
+  /// forma y el agente van a ciegas. A partir de 3 días ya merece celebrarse.
+  Widget _rachaChip() {
+    final n = (dashboard.formState?['racha'] as num?)?.toInt() ?? 0;
+    if (n < 3) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(left: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: skin.warning.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text('🔥 $n días',
+            style: TextStyle(
+                color: skin.warning, fontSize: 12, fontWeight: FontWeight.w700)),
       ),
     );
   }
@@ -1225,9 +1255,16 @@ class _MonthProgressCard extends StatelessWidget {
       } else if (perdido) {
         bottom = 'El premio de -$d€ vuelve el mes que viene.';
       } else {
-        bottom = cp != null
-            ? 'Completa el mes y pagas $cp€ (ahorras $d€)'
-            : 'Completa el mes y ahorras $d€';
+        // CONCRETO, no genérico. "Vas en regla" no mueve a nadie; saber cuántos
+        // entrenos faltan para un descuento en euros, sí. Los datos ya llegaban.
+        final faltan = total - done;
+        bottom = faltan > 0
+            ? (faltan == 1
+                ? 'Te queda 1 entreno del plan para ahorrar $d€'
+                : 'Te quedan $faltan entrenos del plan para ahorrar $d€')
+            : (cp != null
+                ? 'Termina el mes así y pagas $cp€ (ahorras $d€)'
+                : 'Termina el mes así y ahorras $d€');
       }
     } else {
       if (conseguido) {
@@ -1599,7 +1636,10 @@ class _SessionContent extends StatelessWidget {
             ),
           ],
         ),
-        if (status != 'completed' && status != 'in_progress' && status != 'missed') ...[
+        // 'rest' faltaba en la lista: el día de descanso mostraba el chip
+        // "Descanso" y justo debajo un botón para ponerse a entrenar.
+        if (status != 'completed' && status != 'in_progress' &&
+            status != 'missed' && status != 'rest') ...[
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,

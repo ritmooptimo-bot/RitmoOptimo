@@ -34,6 +34,11 @@ const _kAccuracyFinaM = 25.0;
 // decenas de metros e inflar los kilómetros).
 const _kMaxSpeedMps = 12.0;   // 43 km/h — imposible andando o corriendo
 
+// Movimiento mínimo sobre el ancla para que cuente como distancia recorrida.
+// Por debajo es temblor del GPS estando parado. No se pierde nada: mientras no
+// se supere, el ancla no se mueve y el trayecto se sigue acumulando.
+const _kMinMoveM = 3.0;
+
 // FIX 2: Intervalo de actualización forzada cada 10 s aunque no haya movimiento.
 //         Evita quedarse sin puntos en tramos lentos o paradas breves.
 const _kIntervalDuration = Duration(seconds: 2);
@@ -154,6 +159,11 @@ class GpsService {
   DateTime? _ultimaLectura;
   final _accuracyController = StreamController<double>.broadcast();
   Position? _lastPosition;
+  // Ancla SOLO para medir distancia: se mueve a la vez que se suma (ver _onPosition).
+  Position? _distAnchor;
+  // Hora de la última lectura recibida, para medir la velocidad del salto con su
+  // propio reloj (antes se usaba el del último punto guardado, cada 3 s).
+  DateTime? _lastFixTime;
   double _totalDistanceM = 0;
   DateTime? _startTime;
   DateTime? _lastPointTime;
@@ -205,12 +215,27 @@ class GpsService {
   }
 
   void startTracking() {
+    // Un flujo anterior vivo duplicaría cada lectura (y con ella la distancia):
+    // entrar, salir y volver a la sesión dejaba dos suscripciones sumando.
+    _sub?.cancel();
+    _sub = null;
+    _vigilante?.cancel();
+    _vigilante = null;
+
     _points.clear();
     _totalDistanceM = 0;
     _lastPosition = null;
+    _distAnchor = null;
+    _lastFixTime = null;
     _lastPointTime = null;
     _startTime = DateTime.now();
     _speedBuffer.clear(); // Fix #4: resetear buffer al iniciar
+    // Los contadores de diagnóstico son POR SESIÓN: si arrastran los de la
+    // anterior, el log de campo miente justo cuando hace falta.
+    _recibidos = _aceptados = _guardados = 0;
+    _tiradosPrecision = _tiradosTiempo = 0;
+    _delStream = _delVigilante = _descartados = 0;
+    _lastAccuracyM = null;
 
     // PRIMERA LECTURA INMEDIATA.
     //
@@ -308,8 +333,11 @@ class GpsService {
       final d = dist.as(LengthUnit.Meter,
         LatLng(_lastPosition!.latitude, _lastPosition!.longitude),
         LatLng(pos.latitude, pos.longitude));
-      final dtSec = _lastPointTime != null
-          ? now.difference(_lastPointTime!).inMilliseconds / 1000.0
+      // El reloj del salto es el de la ÚLTIMA LECTURA, no el del último punto
+      // GUARDADO (que va cada 3 s): mezclarlos daba velocidades hasta 6 veces
+      // menores de las reales y dejaba pasar picos que luego inflaban los km.
+      final dtSec = _lastFixTime != null
+          ? now.difference(_lastFixTime!).inMilliseconds / 1000.0
           : 10.0;
       final vel = dtSec > 0 ? d / dtSec : 0.0;
       esPico = dtSec > 0 && vel > _kMaxSpeedMps;
@@ -322,17 +350,45 @@ class GpsService {
         _accuracyController.add(pos.accuracy);
         return;
       }
-      _totalDistanceM += d;
-      print('GPSDIAG rx=$_recibidos acc=${pos.accuracy.toStringAsFixed(0)}m '
-            'salto=${d.toStringAsFixed(1)}m dt=${dtSec.toStringAsFixed(1)}s '
-            'vel=${vel.toStringAsFixed(1)}m/s total=${_totalDistanceM.toStringAsFixed(1)}m');
     } else {
       print('GPSDIAG rx=$_recibidos PRIMERA acc=${pos.accuracy.toStringAsFixed(0)}m '
             'lat=${pos.latitude.toStringAsFixed(5)} lng=${pos.longitude.toStringAsFixed(5)}');
     }
-    // La "última posición buena" solo avanza con lecturas finas. Con una lectura
-    // regular (>25 m) sumamos su distancia pero NO la tomamos de ancla: así un
-    // punto flojo no se convierte en el origen del salto del siguiente.
+
+    // ── DISTANCIA: sumar y mover el ancla van SIEMPRE JUNTOS ────────────────
+    //
+    // Antes no era así: se sumaba en CADA lectura, pero el ancla solo avanzaba
+    // con precisión fina (<=25 m). Con precisión de 25-75 m —lo normal entre
+    // edificios— el ancla se quedaba congelada y cada lectura volvía a sumar el
+    // trayecto ENTERO desde ella: 1,5 + 3 + 4,5 m donde solo se habían recorrido
+    // 4,5. Es lo que inflaba los kilómetros (05/08: +4,7 % frente al Fenix 7).
+    //
+    // Ahora se exige movimiento REAL sobre el ancla antes de sumar. Mientras no
+    // se supere no se suma, pero tampoco se pierde: el ancla no se mueve y el
+    // trayecto se acumula hasta confirmarse. El umbral crece con el error de la
+    // lectura, porque con ±50 m de incertidumbre un "salto" de 10 m es ruido.
+    if (_distAnchor != null) {
+      const dist = Distance();
+      final dd = dist.as(LengthUnit.Meter,
+        LatLng(_distAnchor!.latitude, _distAnchor!.longitude),
+        LatLng(pos.latitude, pos.longitude));
+      final ruido  = pos.accuracy * 0.5;
+      final umbral = ruido > _kMinMoveM ? ruido : _kMinMoveM;
+      if (dd >= umbral) {
+        _totalDistanceM += dd;
+        _distAnchor = pos;
+        print('GPSDIAG rx=$_recibidos acc=${pos.accuracy.toStringAsFixed(0)}m '
+              'avance=${dd.toStringAsFixed(1)}m (umbral ${umbral.toStringAsFixed(1)}) '
+              'total=${_totalDistanceM.toStringAsFixed(1)}m');
+      }
+    } else {
+      _distAnchor = pos;
+    }
+    _lastFixTime = now;
+
+    // La "última posición buena" (para el trazado y la detección de picos) solo
+    // avanza con lecturas finas: un punto flojo no debe ser el origen del salto
+    // del siguiente.
     if (pos.accuracy <= _kAccuracyFinaM || _lastPosition == null) {
       _lastPosition = pos;
     }

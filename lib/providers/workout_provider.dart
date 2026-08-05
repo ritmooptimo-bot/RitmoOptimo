@@ -250,7 +250,23 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   }
 
   void _onHR(int bpm) {
+    // Lecturas fisiológicamente imposibles (banda mal puesta, paquete corrupto)
+    // no pueden entrar ni en la media ni en el máximo.
+    if (bpm < 30 || bpm > 220) return;
+
     _gps.setCurrentHR(bpm);
+
+    // La media y el máximo SOLO cuentan con la sesión en marcha.
+    //
+    // El atleta se pone la banda y la empareja varios minutos antes de arrancar:
+    // esas lecturas de reposo (o de la banda sobre la mesa) hundían la media.
+    // Medido en la sesión real del 21/07: se guardaron 101 ppm cuando el propio
+    // recorrido daba 129 y el Garmin 150.
+    if (!state.isRunning) {
+      state = state.copyWith(currentHR: bpm);
+      return;
+    }
+
     state = state.copyWith(
       currentHR: bpm,
       hrMin: state.hrMin == null ? bpm : min(state.hrMin!, bpm),

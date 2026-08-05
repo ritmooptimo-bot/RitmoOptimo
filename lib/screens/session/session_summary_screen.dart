@@ -247,43 +247,32 @@ class _SummaryBody extends StatelessWidget {
     } catch (_) { return ''; }
   }
 
-  // Zonas HR: usa datos del servidor si disponibles, si no calcula desde puntos GPS
+  // ZONAS DE FC: SOLO las que calcula el servidor.
+  //
+  // Antes, si el servidor no las mandaba, se calculaban aquí usando como FC
+  // máxima teórica la FC MÁXIMA DE ESTA MISMA SESIÓN. En un rodaje suave con
+  // máxima de 140 eso ponía todos los puntos al 90-100 % → el atleta leía
+  // "50 minutos en Z5" después de un trote regenerativo. Y la estimación desde
+  // la FC media era directamente inventada.
+  //
+  // El servidor sí conoce la FC máxima real del perfil (178 en el caso de David)
+  // y ahora también decide si la FC de la sesión es creíble. Si no hay zonas del
+  // servidor, no se pintan: mejor no decir nada que decir algo falso.
   Map<String, int> get _zoneSeconds {
-    if (data.serverHrZones != null && data.serverHrZones!.isNotEmpty) {
-      final z = data.serverHrZones!;
-      final total = z.values.fold(0, (a, b) => a + b);
-      if (total > 0) return z;
-    }
-    // Cálculo de fallback desde puntos GPS
-    final maxHR  = _hrMax > 0 ? _hrMax.toDouble() : 190.0;
-    final ptsHR  = data.gpsPoints.where((p) => p.hr != null && p.hr! > 0).toList();
-    if (ptsHR.isNotEmpty) {
-      final spp = (_durMin * 60) / ptsHR.length;
-      int z1 = 0, z2 = 0, z3 = 0, z4 = 0, z5 = 0;
-      for (final p in ptsHR) {
-        final pct = p.hr! / maxHR;
-        if      (pct < 0.60) z1 += spp.round();
-        else if (pct < 0.70) z2 += spp.round();
-        else if (pct < 0.80) z3 += spp.round();
-        else if (pct < 0.90) z4 += spp.round();
-        else                 z5 += spp.round();
-      }
-      return {'Z1': z1, 'Z2': z2, 'Z3': z3, 'Z4': z4, 'Z5': z5};
-    }
-    // Estimación desde FC media
-    if (_hrAvg > 0 && _durMin > 0) {
-      final total = _durMin * 60;
-      final pct   = _hrAvg / maxHR;
-      if (pct < 0.60) return {'Z1': total, 'Z2': 0, 'Z3': 0, 'Z4': 0, 'Z5': 0};
-      if (pct < 0.70) return {'Z1': (total*.2).round(), 'Z2': (total*.8).round(), 'Z3': 0, 'Z4': 0, 'Z5': 0};
-      if (pct < 0.80) return {'Z1': (total*.1).round(), 'Z2': (total*.2).round(), 'Z3': (total*.7).round(), 'Z4': 0, 'Z5': 0};
-      if (pct < 0.90) return {'Z1': 0, 'Z2': (total*.1).round(), 'Z3': (total*.3).round(), 'Z4': (total*.6).round(), 'Z5': 0};
-      return {'Z1': 0, 'Z2': 0, 'Z3': (total*.1).round(), 'Z4': (total*.4).round(), 'Z5': (total*.5).round()};
-    }
-    return {};
+    final z = data.serverHrZones;
+    if (z == null || z.isEmpty) return {};
+    return z.values.fold(0, (a, b) => a + b) > 0 ? z : {};
   }
 
+  bool get _isMissed => data.session['status'] == 'missed';
+
   String _motivationalMsg() {
+    // Una sesión perdida no se celebra. Tampoco se riñe: se pasa página, que es
+    // lo que haría un entrenador de verdad.
+    if (_isMissed) {
+      return 'Este día no pudo ser, y no pasa nada. Lo que cuenta es la próxima '
+             'sesión: retomarla es lo que sostiene el progreso.';
+    }
     if (_rpe >= 9) return '¡Esfuerzo máximo! Esa determinación marca la diferencia.';
     if (_rpe >= 7) return '¡Gran trabajo! Sesión muy exigente bien ejecutada.';
     if (data.trainingLoad != null && data.trainingLoad! > 80) return '¡Carga alta! Tu cuerpo está absorbiendo el estímulo. Descansa bien.';
@@ -316,6 +305,7 @@ class _SummaryBody extends StatelessWidget {
           dateStr: _dateStr,
           timeStr: _completedTime,
           sport:   data.sportType,
+          missed:  _isMissed,
         )),
 
         // ── Métricas principales ──────────────────────────────
@@ -457,9 +447,13 @@ class _HeroBanner extends StatelessWidget {
   final SkinConfig skin;
   final String title, type, dateStr, timeStr;
   final String? sport;
+  /// Sesión que NO se llegó a hacer. Sin esto, abrir una sesión perdida desde
+  /// Inicio, Plan o Historial mostraba un check verde y "SESIÓN COMPLETADA":
+  /// la app felicitaba al atleta justo por el día que falló.
+  final bool missed;
   const _HeroBanner({required this.skin, required this.title,
       required this.type, required this.dateStr, required this.timeStr,
-      this.sport});
+      this.sport, this.missed = false});
 
   static const _typeIcons = {
     'recuperacion': '🟩', 'base': '🟦', 'umbral': '🟧', 'vo2max': '🔴',
@@ -478,7 +472,10 @@ class _HeroBanner extends StatelessWidget {
       gradient: LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [const Color(0xFF1B5E20), skin.background],
+        colors: [
+          missed ? const Color(0xFF5D4037) : const Color(0xFF1B5E20),
+          skin.background,
+        ],
       ),
     ),
     child: SafeArea(
@@ -497,19 +494,23 @@ class _HeroBanner extends StatelessWidget {
           Container(
             width: 72, height: 72,
             decoration: BoxDecoration(
-              color: const Color(0xFF2E7D32),
+              color: missed ? const Color(0xFF795548) : const Color(0xFF2E7D32),
               shape: BoxShape.circle,
               boxShadow: [BoxShadow(
-                color: const Color(0xFF4CAF50).withValues(alpha: 0.4),
+                color: (missed ? const Color(0xFFA1887F) : const Color(0xFF4CAF50))
+                    .withValues(alpha: 0.4),
                 blurRadius: 20, spreadRadius: 4,
               )],
             ),
-            child: const Icon(Icons.check, color: Colors.white, size: 40),
+            child: Icon(missed ? Icons.event_busy : Icons.check,
+                color: Colors.white, size: 40),
           ),
           const SizedBox(height: 12),
-          const Text('SESIÓN COMPLETADA', style: TextStyle(
-              color: Color(0xFF81C784), fontSize: 11,
-              fontWeight: FontWeight.w700, letterSpacing: 3)),
+          Text(missed ? 'SESIÓN NO REALIZADA' : 'SESIÓN COMPLETADA',
+              style: TextStyle(
+                  color: missed ? const Color(0xFFBCAAA4) : const Color(0xFF81C784),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700, letterSpacing: 3)),
           const SizedBox(height: 8),
           Text(
             '${_typeIcons[type] ?? _sportIcons[sport ?? ''] ?? '🏃'} $title',
