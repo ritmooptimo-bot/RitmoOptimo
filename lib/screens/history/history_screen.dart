@@ -5,6 +5,7 @@ import '../../providers/history_provider.dart';
 import '../../providers/skin_provider.dart';
 import '../../models/sport.dart';
 import '../../config/skins/skin_config.dart';
+import '../../core/network/api_client.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -54,6 +55,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 ),
               )
             else ...[
+              // TU PROGRESO — lo primero del Historial, porque es la pregunta que
+              // de verdad se hace el deportista: "¿estoy mejorando?".
+              const _ProgressCard(),
               _CalendarGrid(
                 skin: skin,
                 state: state,
@@ -76,6 +80,152 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       ),
     );
   }
+}
+
+// ── TU PROGRESO ──────────────────────────────────────────────────
+//
+// La app medía muchísimo y no le devolvía al deportista NI UNA respuesta a la
+// pregunta que importa: "¿estoy mejorando?". Esta tarjeta la responde con la
+// eficiencia aeróbica (corre más rápido con el mismo pulso), el desacople
+// (¿aguanta el ritmo hasta el final?) y la carga (¿está subiendo demasiado
+// rápido y se va a lesionar?).
+//
+// Cuando aún no hay datos suficientes NO se inventa un porcentaje: se dice
+// honestamente cuánto falta. Un "has empeorado un 4,7 %" por ruido estadístico
+// es lo peor que puede leer alguien que acaba de empezar.
+
+final _progressProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
+  try {
+    return await ref.read(apiClientProvider).getProgress();
+  } catch (_) {
+    return null;
+  }
+});
+
+class _ProgressCard extends ConsumerWidget {
+  const _ProgressCard();
+
+  static double? _d(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString().replaceAll(',', '.'));
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final skin = ref.watch(activeSkinProvider);
+    final asyncP = ref.watch(_progressProvider);
+
+    return asyncP.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (p) {
+        if (p == null) return const SizedBox.shrink();
+        final estado  = p['estado'] as String? ?? 'construyendo';
+        final titular = p['titular'] as String? ?? '';
+        if (titular.isEmpty) return const SizedBox.shrink();
+
+        final mejora = _d(p['mejora_pct']);
+        final des    = p['desacople'] as Map<String, dynamic>?;
+        final carga  = p['carga'] as Map<String, dynamic>?;
+
+        final Color color = switch (estado) {
+          'mejorando' => skin.success,
+          'bajando'   => skin.warning,
+          'estable'   => skin.accent,
+          _           => skin.textMuted,
+        };
+        final IconData icono = switch (estado) {
+          'mejorando' => Icons.trending_up,
+          'bajando'   => Icons.trending_down,
+          'estable'   => Icons.trending_flat,
+          _           => Icons.hourglass_bottom,
+        };
+
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: skin.backgroundSecondary,
+            borderRadius: BorderRadius.circular(14),
+            border: Border(left: BorderSide(color: color, width: 4)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icono, color: color, size: 18),
+                  const SizedBox(width: 8),
+                  Text('TU PROGRESO', style: TextStyle(
+                    color: skin.textMuted, fontSize: 11,
+                    fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+                  if (mejora != null) ...[
+                    const Spacer(),
+                    Text('${mejora > 0 ? '+' : ''}${mejora.toStringAsFixed(1)} %',
+                        style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w800)),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(titular, style: TextStyle(
+                  color: skin.textPrimary, fontSize: 14.5, height: 1.4,
+                  fontWeight: FontWeight.w600)),
+              if (des != null) ...[
+                const SizedBox(height: 12),
+                _Linea(
+                  skin: skin,
+                  icono: Icons.speed,
+                  titulo: 'Aguante del ritmo',
+                  texto: des['texto'] as String? ?? '',
+                ),
+              ],
+              if (carga != null) ...[
+                const SizedBox(height: 10),
+                _Linea(
+                  skin: skin,
+                  icono: Icons.fitness_center,
+                  titulo: 'Tu carga',
+                  texto: carga['texto'] as String? ?? '',
+                  alerta: carga['nivel'] == 'alto',
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _Linea extends StatelessWidget {
+  final SkinConfig skin;
+  final IconData icono;
+  final String titulo, texto;
+  final bool alerta;
+  const _Linea({required this.skin, required this.icono,
+                required this.titulo, required this.texto, this.alerta = false});
+
+  @override
+  Widget build(BuildContext context) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icono, size: 15, color: alerta ? skin.error : skin.textMuted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(titulo, style: TextStyle(
+                    color: alerta ? skin.error : skin.textSecondary,
+                    fontSize: 12, fontWeight: FontWeight.w700)),
+                Text(texto, style: TextStyle(
+                    color: skin.textSecondary, fontSize: 13, height: 1.35)),
+              ],
+            ),
+          ),
+        ],
+      );
 }
 
 // ── Header con navegación de mes ─────────────────────────────────

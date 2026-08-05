@@ -9,6 +9,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/pending_tracks.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../providers/workout_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../config/skins/skin_config.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -29,9 +30,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           .then((n) { if (n > 0) debugPrint('[PendingTracks] $n recorrido(s) subido(s) al abrir'); });
       _setupCheckinReminder();
     });
-    Future.microtask(
-      () => ref.read(dashboardProvider.notifier).load(),
-    );
+    Future.microtask(() {
+      ref.read(dashboardProvider.notifier).load();
+      // Comprobación de fondo del chat: si el entrenador ha contestado, el globo
+      // de la barra aparece nada más abrir la app, sin tener que entrar a mirar.
+      ref.read(chatProvider.notifier).refrescarNoLeidos();
+    });
   }
 
   // Pide el permiso de notificaciones (una vez) y programa el recordatorio
@@ -73,13 +77,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       backgroundColor: skin.background,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/chat'),
-        backgroundColor: skin.accent,
-        foregroundColor: skin.background,
-        tooltip: 'Chat con tu equipo',
-        child: const Icon(Icons.chat_bubble_outline),
-      ),
+      // El botón flotante del chat se retira: ahora el chat está en la barra
+      // inferior, accesible desde CUALQUIER pestaña y con globo de no leídos.
+      // Aquí solo tapaba la tarjeta del premio del mes.
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () => ref.read(dashboardProvider.notifier).load(),
@@ -420,6 +420,20 @@ class _Header extends StatelessWidget {
               ],
             ),
           ),
+          // Perfil (temas y cerrar sesión) sale de la barra inferior, donde
+          // ocupaba un hueco de cinco para tres botones, y pasa aquí: el chat
+          // necesitaba ese sitio mucho más.
+          // Compacto a propósito: con el botón a tamaño normal, el estado del día
+          // se quedaba sin ancho y "Listo para apretar" salía cortado.
+          IconButton(
+            icon: Icon(Icons.person_outline, color: skin.textSecondary, size: 20),
+            tooltip: 'Mi perfil',
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            onPressed: () => context.push('/profile'),
+          ),
+          const SizedBox(width: 4),
           // Alerta badge — PULSABLE: abre la lista de avisos del deportista
           if (dashboard.pendingAlerts > 0)
             Material(

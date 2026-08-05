@@ -15,6 +15,7 @@ import '../screens/session/ble_scan_screen.dart';
 import '../screens/history/history_screen.dart';
 import '../screens/session/session_summary_screen.dart';
 import '../screens/chat/chat_screen.dart';
+import '../providers/chat_provider.dart';
 
 // ── Routes ────────────────────────────────────────────────────────
 abstract class AppRoutes {
@@ -163,6 +164,11 @@ class _AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final idx = _currentIndex(context);
+    // Globo de respuestas del entrenador sin leer. El chat solo se alcanzaba
+    // desde el botón flotante de Inicio y NO avisaba de nada: si el entrenador
+    // contestaba, el atleta no se enteraba hasta que entrase por curiosidad.
+    final sinLeer = ref.watch(chatProvider).unread;
+
     return Scaffold(
       body: child,
       bottomNavigationBar: BottomNavigationBar(
@@ -173,18 +179,57 @@ class _AppShell extends ConsumerWidget {
             case 0: context.go(AppRoutes.home);
             case 1: context.go(AppRoutes.weekPlan);
             case 2: context.go(AppRoutes.wellness);
-            case 3: context.go(AppRoutes.profile);
+            // El chat es pantalla completa (fuera del contenedor de pestañas):
+            // se apila y al cerrarlo se vuelve a la pestaña donde estaba.
+            case 3: context.push(AppRoutes.chat);
             case 4: context.go(AppRoutes.history);
           }
         },
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined),      activeIcon: Icon(Icons.home),           label: 'Inicio'),
-          BottomNavigationBarItem(icon: Icon(Icons.calendar_today_outlined), activeIcon: Icon(Icons.calendar_today), label: 'Plan'),
-          BottomNavigationBarItem(icon: Icon(Icons.favorite_outline),   activeIcon: Icon(Icons.favorite),       label: 'Bienestar'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline),     activeIcon: Icon(Icons.person),         label: 'Perfil'),
-          BottomNavigationBarItem(icon: Icon(Icons.history_outlined),   activeIcon: Icon(Icons.history),        label: 'Historial'),
+        items: [
+          const BottomNavigationBarItem(icon: Icon(Icons.home_outlined),      activeIcon: Icon(Icons.home),           label: 'Inicio'),
+          const BottomNavigationBarItem(icon: Icon(Icons.calendar_today_outlined), activeIcon: Icon(Icons.calendar_today), label: 'Plan'),
+          const BottomNavigationBarItem(icon: Icon(Icons.favorite_outline),   activeIcon: Icon(Icons.favorite),       label: 'Bienestar'),
+          BottomNavigationBarItem(
+            icon: _IconoConGlobo(icono: Icons.chat_bubble_outline, cuenta: sinLeer),
+            activeIcon: _IconoConGlobo(icono: Icons.chat_bubble, cuenta: sinLeer),
+            label: 'Chat',
+          ),
+          const BottomNavigationBarItem(icon: Icon(Icons.history_outlined),   activeIcon: Icon(Icons.history),        label: 'Historial'),
         ],
       ),
+    );
+  }
+}
+
+class _IconoConGlobo extends StatelessWidget {
+  final IconData icono;
+  final int cuenta;
+  const _IconoConGlobo({required this.icono, required this.cuenta});
+
+  @override
+  Widget build(BuildContext context) {
+    if (cuenta <= 0) return Icon(icono);
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(icono),
+        Positioned(
+          right: -6, top: -4,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEF5350),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            constraints: const BoxConstraints(minWidth: 16),
+            child: Text(
+              cuenta > 9 ? '9+' : '$cuenta',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -142,6 +142,14 @@ class ApiClient {
     return (r.data as Map<String, dynamic>);
   }
 
+  // ── TU PROGRESO: eficiencia aeróbica, desacople y carga ──────
+  // Es la prueba objetiva de que el plan funciona: si corre más rápido con el
+  // mismo pulso, ha mejorado de verdad.
+  Future<Map<String, dynamic>> getProgress() async {
+    final r = await _dio.get('/athlete/progress');
+    return (r.data as Map<String, dynamic>);
+  }
+
   // ── "Estado de hoy" (readiness) ──────────────────────────────
   Future<Map<String, dynamic>> getReadiness() async {
     final r = await _dio.get('/athlete/readiness');

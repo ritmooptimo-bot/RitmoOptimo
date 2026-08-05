@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ── Modelo de mensaje ─────────────────────────────────────────────
 class ChatMessage {
@@ -53,20 +54,26 @@ class ChatState {
   final bool loading;
   final bool sending;
   final String? error;
+  /// Respuestas del entrenador que aún no ha visto. Sin esto, si el entrenador
+  /// contestaba el atleta no se enteraba hasta que entrase por curiosidad.
+  final int unread;
 
   const ChatState({
     this.messages = const [],
     this.loading = false,
     this.sending = false,
     this.error,
+    this.unread = 0,
   });
 
-  ChatState copyWith({List<ChatMessage>? messages, bool? loading, bool? sending, String? error}) =>
+  ChatState copyWith({List<ChatMessage>? messages, bool? loading, bool? sending,
+                      String? error, int? unread}) =>
       ChatState(
         messages: messages ?? this.messages,
         loading: loading ?? this.loading,
         sending: sending ?? this.sending,
         error: error,
+        unread: unread ?? this.unread,
       );
 }
 
@@ -94,15 +101,51 @@ class ChatNotifier extends StateNotifier<ChatState> {
     return raw.map((e) => ChatMessage.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  static const _kUltimaLectura = 'chat_ultima_lectura';
+
   Future<void> load({bool silent = false}) async {
     if (!silent) state = state.copyWith(loading: true, error: null);
     try {
       final r = await _dio.get('/messages');
-      state = state.copyWith(messages: _parse(r.data), loading: false, error: null);
+      final msgs = _parse(r.data);
+      state = state.copyWith(messages: msgs, loading: false, error: null,
+                             unread: await _contarNoLeidos(msgs));
     } catch (_) {
       state = state.copyWith(loading: false, error: silent ? state.error : 'No se pudo cargar el chat');
     }
   }
+
+  /// Respuestas del entrenador posteriores a la última vez que abrió el chat.
+  /// Se resuelve en el móvil comparando marcas de tiempo: no hace falta que el
+  /// servidor lleve la cuenta de lecturas.
+  Future<int> _contarNoLeidos(List<ChatMessage> msgs) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final iso = p.getString(_kUltimaLectura);
+      final desde = iso != null ? DateTime.tryParse(iso) : null;
+      if (desde == null) {
+        // Primera vez: no se marca todo como no leído (sería un globo enorme
+        // por mensajes viejos que ya vio por WhatsApp). Solo lo de hoy.
+        final hoy = DateTime.now().subtract(const Duration(hours: 12));
+        return msgs.where((m) => !m.isMine && m.timestamp.isAfter(hoy)).length;
+      }
+      return msgs.where((m) => !m.isMine && m.timestamp.isAfter(desde)).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Al abrir el chat: se da por leído todo lo que hay.
+  Future<void> marcarLeido() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setString(_kUltimaLectura, DateTime.now().toIso8601String());
+    } catch (_) {}
+    if (state.unread != 0) state = state.copyWith(unread: 0);
+  }
+
+  /// Comprobación de fondo para el globo, sin tocar el estado de carga.
+  Future<void> refrescarNoLeidos() => load(silent: true);
 
   /// Envía el mensaje. Devuelve false si NO llegó al servidor: en ese caso el
   /// mensaje optimista se retira de la lista (antes se quedaba pintado y el

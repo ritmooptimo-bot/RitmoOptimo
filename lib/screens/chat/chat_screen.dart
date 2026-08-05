@@ -22,12 +22,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.initState();
     Future.microtask(() async {
       await ref.read(chatProvider.notifier).load();
+      // Ha entrado: lo que hay queda visto y el globo de la barra se apaga.
+      await ref.read(chatProvider.notifier).marcarLeido();
       _scrollToBottom();
     });
     // Polling (v1). Tiempo real con socket en una mejora posterior.
     _poll = Timer.periodic(const Duration(seconds: 8), (_) async {
       final before = ref.read(chatProvider).messages.length;
       await ref.read(chatProvider.notifier).load(silent: true);
+      if (!mounted) return;
+      // Está leyendo: lo que llegue mientras tanto no cuenta como no leído.
+      await ref.read(chatProvider.notifier).marcarLeido();
       if (mounted && ref.read(chatProvider).messages.length != before) _scrollToBottom();
     });
   }
