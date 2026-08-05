@@ -188,6 +188,10 @@ class SessionAudioController {
   // Deduplicación: evita re-disparar el mismo cue en el mismo segundo
   final Set<String> _fired = {};
 
+  // Aviso por kilómetro: "Kilómetro 3. Ritmo 5:42..." (petición del usuario)
+  int _lastKmAnnounced   = 0;
+  int _lastKmElapsedSec  = 0;
+
   SessionAudioController({
     required AudioCueService audio,
     required List<dynamic>   rawBlocks,
@@ -280,6 +284,9 @@ class SessionAudioController {
         return;
       }
 
+      // Aviso por kilómetro (en cualquier fase de carrera, sin pisar los pitidos)
+      await _maybeAnnounceKm(elapsed, distanceM);
+
       switch (_phase) {
         case _Phase.preCountdown:
           await _tickPreCountdown(elapsed);
@@ -287,7 +294,16 @@ class SessionAudioController {
         case _Phase.blockWarning:
           await _tickBlockActive(elapsed);
         case _Phase.blockBeeps:
-          break; // countdown5() maneja su propio timing
+          // ⚠️ BUG cazado en la primera sesión real (04/08): esta fase era un
+          // callejón sin salida ("el siguiente tick lo detecta"… pero este case
+          // hacía break y NUNCA se re-evaluaba el bloque) → tras los pitidos
+          // del bloque 2 no llegaba ni el "completado", ni el bloque 3, ni la
+          // finalización. Ahora el tick sigue vigilando el fin del bloque.
+          final b = blocks[_blockIdx];
+          if (b.durationSeconds > 0 &&
+              elapsed - _blockStartElapsed >= b.durationSeconds) {
+            await _endBlock(elapsed);
+          }
         case _Phase.intervalRest:
         case _Phase.intervalRestBeeps:
           await _tickIntervalRest(elapsed, distanceM: distanceM);
@@ -418,6 +434,8 @@ class SessionAudioController {
     _blockIdx          = idx;
     _blockStartElapsed = elapsed;
     _phase             = _Phase.blockActive;
+    // El ritmo del km 1 se mide desde que EMPIEZA a correr (no desde la cuenta atrás)
+    if (idx == 0) _lastKmElapsedSec = elapsed;
 
     final block = blocks[idx];
     final n     = idx + 1;
@@ -538,6 +556,30 @@ class SessionAudioController {
     await Future.delayed(const Duration(milliseconds: 600));
     await _audio.speak('Sesión completada. ¡Excelente trabajo! Revisa tus datos en la pantalla de resumen.');
     await _audio.stopSession();
+  }
+
+  // ── Aviso por kilómetro ─────────────────────────────────────────────────
+  // En cada km completo: número, ritmo del ÚLTIMO km y tiempo total. Se calla
+  // durante pitidos/cuenta atrás/fin para no pisar los cues críticos (ese km
+  // se anuncia al siguiente tick en fase normal — el _lastKm no avanza hasta
+  // que de verdad se dice).
+  Future<void> _maybeAnnounceKm(int elapsed, int distanceM) async {
+    if (distanceM <= 0) return;
+    final km = distanceM ~/ 1000;
+    if (km <= _lastKmAnnounced) return;
+    if (_phase == _Phase.preCountdown ||
+        _phase == _Phase.blockBeeps ||
+        _phase == _Phase.intervalRestBeeps ||
+        _phase == _Phase.sessionDone) {
+      return;
+    }
+    final paceSec = (elapsed - _lastKmElapsedSec).clamp(60, 3600);
+    _lastKmAnnounced  = km;
+    _lastKmElapsedSec = elapsed;
+    await _audio.speak(
+      'Kilómetro $km. Ritmo: ${_fmtPace(paceSec)} el último kilómetro. '
+      'Tiempo total: ${_fmtSec(elapsed)}.',
+    );
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
