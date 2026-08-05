@@ -34,6 +34,86 @@ String fechaLarga(String iso) {
   }
 }
 
+/// Fila visible en el Plan: la puerta principal a las carreras.
+///
+/// Un icono suelto en una esquina no lo descubre nadie para algo que se hace
+/// tres veces al año. Esto se ve sin buscar y cambia según su situación: si no
+/// tiene ninguna, le invita; si tiene, le dice cuál es la próxima y cuánto falta.
+class AvisoCarreras extends ConsumerWidget {
+  final VoidCallback onTap;
+  const AvisoCarreras({super.key, required this.onTap});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final skin = ref.watch(activeSkinProvider);
+    final d = ref.watch(competicionesProvider).valueOrNull;
+    if (d == null) return const SizedBox.shrink();
+
+    final lista = (d['competitions'] as List?) ?? [];
+    String titulo, sub;
+    IconData icono;
+    Color color;
+
+    if (lista.isEmpty) {
+      icono = Icons.flag_outlined;
+      color = skin.textMuted;
+      titulo = '¿Tienes alguna carrera a la vista?';
+      sub = 'Apúntala y organizo tu plan para que llegues en tu mejor versión.';
+    } else {
+      final prox = lista.first as Map<String, dynamic>;
+      int? dias;
+      try {
+        dias = DateTime.parse(prox['fecha'] as String)
+            .difference(DateTime.now()).inDays + 1;
+      } catch (_) {}
+      final esPrincipal = prox['role'] == 'primario';
+      icono = Icons.flag;
+      color = esPrincipal ? skin.accent : skin.textSecondary;
+      titulo = prox['name']?.toString() ?? 'Tu próxima carrera';
+      sub = [
+        if (dias != null && dias > 0) 'En $dias días',
+        if (esPrincipal) 'Tu objetivo principal',
+      ].join(' · ');
+      if (sub.isEmpty) sub = 'Toca para ver el detalle';
+    }
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: skin.backgroundSecondary,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            Icon(icono, color: color, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(titulo,
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: skin.textPrimary,
+                          fontSize: 14, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 2),
+                  Text(sub,
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: skin.textMuted, fontSize: 12.5, height: 1.3)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: skin.textMuted, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class CompetitionsSheet extends ConsumerWidget {
   const CompetitionsSheet({super.key});
 

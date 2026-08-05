@@ -118,12 +118,14 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
         foregroundColor: skin.textPrimary,
         elevation: 0,
         actions: [
-          // Sus carreras. Hasta ahora solo el entrenador podía darlas de alta,
-          // así que el caso más real —"me he apuntado y es dentro de dos
-          // semanas"— no tenía salida.
-          IconButton(
-            icon: const Icon(Icons.emoji_events_outlined),
-            tooltip: 'Mis carreras',
+          // ATAJO, no puerta principal. Un trofeo suele significar "logros" o
+          // "medallas" (cosas ya conseguidas), no "carreras que voy a correr",
+          // así que va con etiqueta y el icono es una BANDERA de meta, que sí
+          // sugiere una fecha marcada. La entrada de verdad es la fila de abajo.
+          TextButton.icon(
+            icon: const Icon(Icons.flag_outlined, size: 19),
+            label: const Text('Carreras'),
+            style: TextButton.styleFrom(foregroundColor: skin.accent),
             onPressed: () => _abrirCompeticiones(context),
           ),
         ],
@@ -131,6 +133,11 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
       body: Column(
         children: [
           _ViewToggle(skin: skin, view: _view, onChanged: _switchTo),
+          // LA PUERTA PRINCIPAL. Esperar a que el deportista descubra un icono en
+          // una esquina, para algo que hace tres veces al año, es esperar sentado.
+          // Aquí se ve sin buscar: si no tiene ninguna carrera, se le invita; si
+          // tiene, se le recuerda cuál es la próxima y cuánto queda.
+          AvisoCarreras(onTap: () => _abrirCompeticiones(context)),
           Expanded(
             child: _view == _PlanView.list
                 ? _buildList(skin)
