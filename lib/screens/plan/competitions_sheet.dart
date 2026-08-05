@@ -267,10 +267,43 @@ class _DialogoNuevaCarreraState extends ConsumerState<_DialogoNuevaCarrera> {
     }
   }
 
+  Widget _opcion(dynamic skin, bool valor, String texto) {
+    final sel = _aPorElla == valor;
+    return InkWell(
+      onTap: () => setState(() => _aPorElla = valor),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: sel ? skin.accent.withValues(alpha: 0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: sel ? skin.accent : skin.textMuted.withValues(alpha: 0.4),
+              width: sel ? 2 : 1),
+        ),
+        child: Row(
+          children: [
+            Icon(sel ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                size: 18, color: sel ? skin.accent : skin.textMuted),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(texto,
+                  style: TextStyle(
+                      color: sel ? skin.textPrimary : skin.textSecondary,
+                      fontSize: 13.5,
+                      fontWeight: sel ? FontWeight.w600 : FontWeight.w400)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final skin = ref.watch(activeSkinProvider);
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       backgroundColor: skin.backgroundSecondary,
       title: Text('Apuntar una carrera',
           style: TextStyle(color: skin.textPrimary, fontWeight: FontWeight.w700)),
@@ -325,7 +358,7 @@ class _DialogoNuevaCarreraState extends ConsumerState<_DialogoNuevaCarrera> {
                 labelStyle: TextStyle(color: skin.textMuted),
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             // La pregunta clave, en SU idioma. De aquí sale el rol técnico que
             // usa la metodología del entrenador.
             Text('¿Vas a por ella?',
@@ -334,23 +367,13 @@ class _DialogoNuevaCarreraState extends ConsumerState<_DialogoNuevaCarrera> {
             const SizedBox(height: 2),
             Text('Esto cambia cómo preparo tu plan para ese día.',
                 style: TextStyle(color: skin.textMuted, fontSize: 12)),
-            const SizedBox(height: 8),
-            RadioListTile<bool>(
-              value: true, groupValue: _aPorElla, dense: true,
-              contentPadding: EdgeInsets.zero,
-              activeColor: skin.accent,
-              title: Text('Sí, quiero rendir al máximo',
-                  style: TextStyle(color: skin.textSecondary, fontSize: 13.5)),
-              onChanged: (v) => setState(() => _aPorElla = v),
-            ),
-            RadioListTile<bool>(
-              value: false, groupValue: _aPorElla, dense: true,
-              contentPadding: EdgeInsets.zero,
-              activeColor: skin.accent,
-              title: Text('No, la corro de preparación',
-                  style: TextStyle(color: skin.textSecondary, fontSize: 13.5)),
-              onChanged: (v) => setState(() => _aPorElla = v),
-            ),
+            const SizedBox(height: 6),
+            // Botones compactos en vez de RadioListTile: con la letra grande del
+            // sistema, las dos filas de radio no cabían y solo se veía la
+            // primera opción — parecía que no había alternativa.
+            _opcion(skin, true,  'Sí, quiero rendir al máximo'),
+            const SizedBox(height: 6),
+            _opcion(skin, false, 'No, la corro de preparación'),
             if (_error != null) ...[
               const SizedBox(height: 8),
               Text(_error!, style: TextStyle(color: skin.error, fontSize: 13)),
