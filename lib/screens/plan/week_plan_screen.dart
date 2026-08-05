@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/skin_provider.dart';
+import 'competitions_sheet.dart';
 import '../../providers/plan_calendar_provider.dart';
 import '../../config/skins/skin_config.dart';
 import '../../core/network/api_client.dart';
@@ -59,6 +60,16 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
     return raw.length >= 10 && raw.substring(0, 10) == _todayStr();
   }
 
+  /// Sus carreras: ver las apuntadas y añadir una nueva.
+  void _abrirCompeticiones(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => const CompetitionsSheet(),
+    );
+  }
+
   void _switchTo(_PlanView v) {
     // El provider NO es autoDispose → su instancia persiste, así que cargar
     // aquí (en el handler del toque) es seguro y llega al build que la observa.
@@ -106,6 +117,16 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
         backgroundColor: skin.backgroundSecondary,
         foregroundColor: skin.textPrimary,
         elevation: 0,
+        actions: [
+          // Sus carreras. Hasta ahora solo el entrenador podía darlas de alta,
+          // así que el caso más real —"me he apuntado y es dentro de dos
+          // semanas"— no tenía salida.
+          IconButton(
+            icon: const Icon(Icons.emoji_events_outlined),
+            tooltip: 'Mis carreras',
+            onPressed: () => _abrirCompeticiones(context),
+          ),
+        ],
       ),
       body: Column(
         children: [

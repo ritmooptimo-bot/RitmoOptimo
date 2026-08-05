@@ -142,6 +142,35 @@ class ApiClient {
     return (r.data as Map<String, dynamic>);
   }
 
+  // ── SUS CARRERAS ─────────────────────────────────────────────
+  // El deportista apunta la competición y el plan se reorganiza para que llegue
+  // en su mejor versión. Nunca se le piden roles técnicos: solo si va a por ella.
+  Future<Map<String, dynamic>> getCompetitions() async {
+    final r = await _dio.get('/athlete/competitions');
+    return (r.data as Map<String, dynamic>);
+  }
+
+  Future<Map<String, dynamic>> addCompetition({
+    required String name,
+    required String date,          // YYYY-MM-DD
+    double? distanceKm,
+    String? location,
+    bool? vaAPorElla,
+  }) async {
+    final r = await _dio.post('/athlete/competitions', data: {
+      'name': name,
+      'competition_date': date,
+      if (distanceKm != null) 'distance': distanceKm,
+      if (location != null && location.isNotEmpty) 'location': location,
+      if (vaAPorElla != null) 'va_a_por_ella': vaAPorElla,
+    });
+    return (r.data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteCompetition(String id) async {
+    await _dio.delete('/athlete/competitions/$id');
+  }
+
   // ── TU PROGRESO: eficiencia aeróbica, desacople y carga ──────
   // Es la prueba objetiva de que el plan funciona: si corre más rápido con el
   // mismo pulso, ha mejorado de verdad.
