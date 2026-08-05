@@ -3,12 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/skin_provider.dart';
 import '../../core/network/api_client.dart';
 
-// ── MIS CARRERAS ──────────────────────────────────────────────────────
+// ── MIS COMPETICIONES ─────────────────────────────────────────────────
 //
 // El deportista apunta aquí su competición y el plan se reorganiza para que
 // llegue en su mejor versión. Hasta ahora solo el entrenador podía darlas de
 // alta, así que el caso más real —"me he apuntado y es dentro de dos semanas"—
 // no tenía salida.
+//
+// Se dice COMPETICIÓN y no "carrera" a propósito: la app es multideporte
+// (running, trail, ciclismo, natación, triatlón y fuerza) y un ciclista o un
+// nadador que lee "carreras" duda de si la función va con él.
 //
 // NUNCA se le piden roles técnicos (primario, secundario A/B): ese es el idioma
 // del entrenador. A él solo se le pregunta si va a por ella o la corre de
@@ -57,7 +61,7 @@ class AvisoCarreras extends ConsumerWidget {
     if (lista.isEmpty) {
       icono = Icons.flag_outlined;
       color = skin.textMuted;
-      titulo = '¿Tienes alguna carrera a la vista?';
+      titulo = '¿Tienes alguna competición a la vista?';
       sub = 'Apúntala y organizo tu plan para que llegues en tu mejor versión.';
     } else {
       final prox = lista.first as Map<String, dynamic>;
@@ -69,7 +73,7 @@ class AvisoCarreras extends ConsumerWidget {
       final esPrincipal = prox['role'] == 'primario';
       icono = Icons.flag;
       color = esPrincipal ? skin.accent : skin.textSecondary;
-      titulo = prox['name']?.toString() ?? 'Tu próxima carrera';
+      titulo = prox['name']?.toString() ?? 'Tu próxima competición';
       sub = [
         if (dias != null && dias > 0) 'En $dias días',
         if (esPrincipal) 'Tu objetivo principal',
@@ -121,7 +125,7 @@ class CompetitionsSheet extends ConsumerWidget {
     'primario': 'Tu objetivo principal',
     'secundario_a': 'Test de ritmo antes de tu objetivo',
     'secundario_b': 'Estímulo de resistencia',
-    'popular': 'Carrera de preparación',
+    'popular': 'De preparación',
   };
 
   @override
@@ -154,7 +158,7 @@ class CompetitionsSheet extends ConsumerWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text('Mis carreras',
+                    child: Text('Mis competiciones',
                         style: TextStyle(color: skin.textPrimary,
                             fontSize: 20, fontWeight: FontWeight.w700)),
                   ),
@@ -175,13 +179,13 @@ class CompetitionsSheet extends ConsumerWidget {
             Expanded(
               child: data.when(
                 loading: () => Center(child: CircularProgressIndicator(color: skin.accent)),
-                error: (_, __) => _vacio(skin, 'No se pudieron cargar tus carreras.'),
+                error: (_, __) => _vacio(skin, 'No se pudieron cargar tus competiciones.'),
                 data: (d) {
                   final lista = (d?['competitions'] as List?) ?? [];
                   final fase = d?['fase'] as Map<String, dynamic>?;
                   if (lista.isEmpty) {
                     return _vacio(skin,
-                        'Aún no tienes ninguna carrera apuntada.\n\nCuando apuntes una, tu plan se reorganiza solo para que llegues en tu mejor versión.');
+                        'Aún no tienes ninguna competición apuntada.\n\nCuando apuntes una, tu plan se reorganiza solo para que llegues en tu mejor versión.');
                   }
                   return ListView(
                     controller: scroll,
@@ -253,7 +257,7 @@ class CompetitionsSheet extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(c['name']?.toString() ?? 'Carrera',
+                Text(c['name']?.toString() ?? 'Competición',
                     style: TextStyle(color: skin.textPrimary,
                         fontSize: 15.5, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 3),
@@ -385,7 +389,7 @@ class _DialogoNuevaCarreraState extends ConsumerState<_DialogoNuevaCarrera> {
     return AlertDialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       backgroundColor: skin.backgroundSecondary,
-      title: Text('Apuntar una carrera',
+      title: Text('Apuntar una competición',
           style: TextStyle(color: skin.textPrimary, fontWeight: FontWeight.w700)),
       content: SingleChildScrollView(
         child: Column(
@@ -397,7 +401,7 @@ class _DialogoNuevaCarreraState extends ConsumerState<_DialogoNuevaCarrera> {
               style: TextStyle(color: skin.textPrimary),
               decoration: InputDecoration(
                 labelText: '¿Cuál es?',
-                hintText: 'Media Maratón de Chiclana',
+                hintText: 'Media Maratón, triatlón, marcha…',
                 labelStyle: TextStyle(color: skin.textMuted),
               ),
             ),

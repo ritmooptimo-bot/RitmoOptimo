@@ -122,10 +122,13 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
           // "medallas" (cosas ya conseguidas), no "carreras que voy a correr",
           // así que va con etiqueta y el icono es una BANDERA de meta, que sí
           // sugiere una fecha marcada. La entrada de verdad es la fila de abajo.
-          TextButton.icon(
-            icon: const Icon(Icons.flag_outlined, size: 19),
-            label: const Text('Carreras'),
-            style: TextButton.styleFrom(foregroundColor: skin.accent),
+          // Solo el icono: "Competiciones" no cabe en la barra con la letra
+          // grande del sistema, y aqui es un ATAJO — la puerta principal es la
+          // fila de abajo, donde la palabra si entra entera.
+          IconButton(
+            icon: const Icon(Icons.flag_outlined),
+            tooltip: 'Mis competiciones',
+            color: skin.accent,
             onPressed: () => _abrirCompeticiones(context),
           ),
         ],
