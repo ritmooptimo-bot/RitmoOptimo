@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/skin_provider.dart';
 import '../../config/skins/skin_config.dart';
+import '../../core/audio/soft_chime.dart';
 import '../../core/ble/ble_service.dart';
 import '../../core/hrv/hrv_analysis.dart';
 import '../../core/hrv/hrv_references.dart';
@@ -140,6 +141,8 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
       _result = r;
       _noSignal = _rr.isEmpty;
     });
+    // El deportista puede tener los ojos cerrados: chime + vibración de fin.
+    SoftChime.measurementDone();
   }
 
   double _median(List<double> v) {

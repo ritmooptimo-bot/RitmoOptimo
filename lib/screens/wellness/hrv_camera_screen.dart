@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/skin_provider.dart';
 import '../../config/skins/skin_config.dart';
+import '../../core/audio/soft_chime.dart';
 import '../../core/hrv/hrv_references.dart';
 import '../../core/hrv/hrv_info_sheet.dart';
 import '../../core/network/api_client.dart';
@@ -165,6 +166,8 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
       _resultHr = res.$1 > 0 ? res.$1 : null;
       _resultHrv = res.$2 > 0 ? res.$2 : null;
     });
+    // El deportista puede tener los ojos cerrados: chime + vibración de fin.
+    SoftChime.measurementDone();
   }
 
   // ── Procesado PPG: arranque → suavizado → detrend → picos → FC + rMSSD ──

@@ -29,8 +29,8 @@ class AudioCueService {
     await _tts.setVolume(1.0);
     await _tts.setPitch(1.0);
 
-    _shortBeep = _buildBeepWav(frequency: 880, durationMs: 90);
-    _longBeep  = _buildBeepWav(frequency: 660, durationMs: 600);
+    _shortBeep = buildBeepWav(frequency: 880, durationMs: 90);
+    _longBeep  = buildBeepWav(frequency: 660, durationMs: 600);
     _silence   = _buildSilenceWav(durationMs: 2000);
 
     _initialized = true;
@@ -90,7 +90,8 @@ class AudioCueService {
   // ── WAV generation (no archivos de asset necesarios) ─────────
 
   /// Genera un WAV PCM de 16-bit mono con una onda senoidal (beep puro).
-  static Uint8List _buildBeepWav({
+  /// Público: también lo usa SoftChime (aviso de fin de medición de bienestar).
+  static Uint8List buildBeepWav({
     required int frequency,
     required int durationMs,
     int sampleRate = 22050,
