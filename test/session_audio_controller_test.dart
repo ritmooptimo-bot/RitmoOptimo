@@ -50,7 +50,9 @@ void main() {
     final controlador = SessionAudioController(
       audio: espia,
       rawBlocks: [
-        {'block': 'warmup',   'min': minPorBloque, 'descripcion': 'Calentamiento suave'},
+        // La zona llega como TEXTO ('z1'), que es como la guarda el plan:
+        // int.tryParse('z1') daba null y la voz se callaba la zona.
+        {'block': 'warmup',   'min': minPorBloque, 'zone': 'z1', 'descripcion': 'Calentamiento suave'},
         {'block': 'steady',   'min': minPorBloque, 'descripcion': 'Rodaje',     'ritmo_objetivo': '5:30'},
         {'block': 'steady',   'min': minPorBloque, 'descripcion': 'Progresión', 'ritmo_objetivo': '5:00'},
         {'block': 'cooldown', 'min': minPorBloque, 'descripcion': 'Enfriamiento'},
@@ -111,7 +113,12 @@ void main() {
           reason: 'Sonará como una hora en vez de como un ritmo: "$frase"');
     }
 
-    // 6. Y el ritmo dicho tiene que cuadrar con la velocidad simulada (5:00/km)
+    // 6. La zona en texto ('z1') tiene que llegar a la voz, no perderse
+    // (la frase va capitalizada: "En zona 1.")
+    expect(todo.toLowerCase(), contains('en zona 1'),
+        reason: 'La zona escrita como texto se pierde y no se locuta');
+
+    // 7. Y el ritmo dicho tiene que cuadrar con la velocidad simulada (5:00/km)
     final km1 = espia.dicho.firstWhere((f) => f.contains('Kilómetro 1'));
     expect(km1, contains('5 minutos'),
         reason: 'El ritmo anunciado no cuadra con la velocidad simulada: $km1');

@@ -12,6 +12,7 @@ import '../../core/network/api_client.dart';
 import '../../core/ble/ble_service.dart';
 import '../../core/gps/gps_service.dart';
 import '../../models/sport.dart';
+import '../../core/utils/zona_fc.dart';
 import 'voice_picker_sheet.dart';
 import '../../core/audio/audio_cue_service.dart';
 import '../../core/audio/session_audio_controller.dart';
@@ -1036,7 +1037,7 @@ class _BlockCard extends StatelessWidget {
                       children: [
                         if (zonaFC != null)
                           _Tag(
-                              label: 'Z$zonaFC FC',
+                              label: etiquetaZonaFc(zonaFC)!,
                               color: skin.error,
                               skin: skin),
                         if (ritmo != null)

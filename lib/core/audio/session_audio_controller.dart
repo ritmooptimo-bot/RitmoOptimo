@@ -1,4 +1,5 @@
 import 'audio_cue_service.dart';
+import '../utils/zona_fc.dart';
 
 // Tipos de bloque que se interpretan como intervalos/series
 const _kIntervalTypes = {'intervals', 'series', 'interval', 'fartlek', 'repeticiones', 'hiit'};
@@ -67,7 +68,7 @@ class BlockInfo {
       label:              _buildLabel(typeRaw, desc),
       type:               typeRaw,
       durationSeconds:    durMin > 0 ? (durMin * 60).round() : 0,
-      zone:               zoneRaw != null ? int.tryParse(zoneRaw.toString()) : null,
+      zone:               zonaFcNumero(zoneRaw),
       targetPace:         paceRaw?.toString(),
       description:        desc.isNotEmpty ? desc : null,
       isInterval:         isInt,
