@@ -4,14 +4,17 @@ import '../../core/audio/audio_cue_service.dart';
 
 /// Elegir la voz que guía la sesión.
 ///
-/// ⚠️ Por qué no pone "hombre" y "mujer": los motores de voz de Android NO
-/// dicen el sexo de cada voz. Solo dan nombres tipo "es-es-x-eef-local". Se
-/// podría adivinar por la letra, pero acertaría a veces y a veces no, y un
-/// cartel que dice "mujer" sobre una voz de hombre es peor que no poner nada.
+/// ⚠️ POR QUÉ NO PONE "HOMBRE" Y "MUJER":
+/// Android NO lo dice. Su clase `Voice` expone nombre, idioma, calidad,
+/// latencia y si necesita internet — y nada más. No hay campo de género en
+/// ninguna versión. Se podría adivinar por la letra del código
+/// ("es-es-x-eef-local") y acertaría unas veces sí y otras no; un cartel que
+/// dice "mujer" sobre una voz de hombre es peor que no poner nada.
 ///
-/// Así que se hace lo que sí es honesto: se listan las que el móvil tiene de
-/// verdad y el atleta las ESCUCHA y elige la que le guste. Es un botón más y
-/// no hay forma de equivocarse.
+/// Lo que sí se puede es quitar de en medio el galimatías: se descartan las
+/// voces que no están instaladas (que era justo por lo que el botón de
+/// escuchar no sonaba), se agrupan por acento y se numeran. El atleta las
+/// escucha y elige. Un botón más y no hay forma de equivocarse.
 class VoicePickerSheet extends StatefulWidget {
   final AudioCueService audio;
   const VoicePickerSheet({super.key, required this.audio});
@@ -31,10 +34,11 @@ class VoicePickerSheet extends StatefulWidget {
 
 class _VoicePickerSheetState extends State<VoicePickerSheet> {
   static const _frase =
-      'Kilómetro 1. Último kilómetro en 5 minutos 30 segundos. Buen ritmo.';
+      'Kilómetro 3. Último kilómetro en 5 minutos 30 segundos. Buen ritmo, sigue así.';
 
   List<Map<String, String>> _voces = [];
   String? _elegida;
+  String? _sonando;
   bool _cargando = true;
 
   @override
@@ -50,11 +54,34 @@ class _VoicePickerSheetState extends State<VoicePickerSheet> {
     setState(() { _voces = v; _cargando = false; });
   }
 
+  /// "España · voz 2" — el número es su orden DENTRO de su acento, para que no
+  /// salga un salto raro (voz 1, voz 5, voz 9) al haber filtrado las que no
+  /// están instaladas.
+  String _titulo(int indice) {
+    final v = _voces[indice];
+    final zona = v['zona'] == 'espana' ? 'España' : 'Latinoamérica';
+    final n = _voces.take(indice + 1).where((x) => x['zona'] == v['zona']).length;
+    return '$zona · voz $n';
+  }
+
+  Future<void> _escuchar(Map<String, String> v) async {
+    setState(() => _sonando = v['name']);
+    final ok = await widget.audio.probarVoz(v, _frase);
+    if (!mounted) return;
+    setState(() => _sonando = null);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Esa voz no ha podido sonar. Prueba con otra.'),
+        duration: Duration(seconds: 3),
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     return DraggableScrollableSheet(
-      initialChildSize: 0.7,
+      initialChildSize: 0.66,
       maxChildSize: 0.92,
       minChildSize: 0.4,
       expand: false,
@@ -70,18 +97,19 @@ class _VoicePickerSheetState extends State<VoicePickerSheet> {
               decoration: BoxDecoration(color: Colors.grey.shade600,
                 borderRadius: BorderRadius.circular(2))),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Voz de la sesión', style: t.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                Text('Voz de la sesión',
+                    style: t.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
                 Text(
-                  'Escúchalas y quédate con la que prefieras. Es la voz que te '
-                  'irá guiando durante el entrenamiento.',
-                  style: t.textTheme.bodySmall?.copyWith(color: Colors.grey.shade400),
+                  'Pulsa ▶ para escuchar cada una y quédate con la que prefieras. '
+                  'Es la voz que te irá guiando mientras entrenas.',
+                  style: t.textTheme.bodySmall?.copyWith(color: Colors.grey.shade400, height: 1.35),
                 ),
               ]),
             ),
-            const Divider(height: 20),
+            const Divider(height: 1),
             Expanded(
               child: _cargando
                   ? const Center(child: CircularProgressIndicator())
@@ -89,32 +117,44 @@ class _VoicePickerSheetState extends State<VoicePickerSheet> {
                       ? Padding(
                           padding: const EdgeInsets.all(24),
                           child: Text(
-                            'Tu móvil no ofrece voces en español para elegir. Se usará '
-                            'la voz que tengas configurada en el sistema.',
-                            style: t.textTheme.bodyMedium?.copyWith(color: Colors.grey.shade400),
+                            'Tu móvil no tiene ninguna voz en español instalada. Se usará '
+                            'la que tengas configurada en los ajustes del teléfono.\n\n'
+                            'Puedes descargar más en Ajustes › Idiomas › Texto a voz.',
+                            style: t.textTheme.bodyMedium?.copyWith(
+                                color: Colors.grey.shade400, height: 1.4),
                           ))
-                      : ListView.builder(
+                      : ListView.separated(
                           controller: scroll,
+                          padding: const EdgeInsets.symmetric(vertical: 6),
                           itemCount: _voces.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1, indent: 68),
                           itemBuilder: (_, i) {
                             final v = _voces[i];
                             final sel = _elegida == v['name'];
+                            final suena = _sonando == v['name'];
+                            final red = v['necesitaRed'] == 'si';
                             return ListTile(
                               leading: IconButton(
-                                icon: const Icon(Icons.play_circle_outline, size: 30),
+                                icon: suena
+                                    ? const SizedBox(width: 26, height: 26,
+                                        child: CircularProgressIndicator(strokeWidth: 2.5))
+                                    : const Icon(Icons.play_circle_outline, size: 32),
                                 tooltip: 'Escuchar',
-                                onPressed: () => widget.audio.probarVoz(v, _frase),
+                                onPressed: suena ? null : () => _escuchar(v),
                               ),
-                              title: Text('Voz ${i + 1}'),
-                              subtitle: Text(v['name'] ?? '',
-                                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                                  style: t.textTheme.bodySmall?.copyWith(color: Colors.grey.shade500)),
+                              title: Text(_titulo(i),
+                                  style: const TextStyle(fontWeight: FontWeight.w600)),
+                              subtitle: red
+                                  ? Text('Necesita internet',
+                                      style: t.textTheme.bodySmall
+                                          ?.copyWith(color: Colors.orange.shade300))
+                                  : null,
                               trailing: sel
-                                  ? const Icon(Icons.check_circle, color: Colors.green)
+                                  ? const Icon(Icons.check_circle, color: Colors.green, size: 26)
                                   : null,
                               onTap: () {
                                 setState(() => _elegida = v['name']);
-                                widget.audio.probarVoz(v, _frase);
+                                _escuchar(v);
                               },
                             );
                           },

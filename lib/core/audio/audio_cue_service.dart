@@ -51,30 +51,85 @@ class AudioCueService {
   static const _clavePrefVoz = 'voz_tts_nombre';
   static const _clavePrefIdioma = 'voz_tts_idioma';
 
-  /// Voces en español que ofrece este móvil.
+  /// Voces en español USABLES de este móvil.
+  ///
+  /// ⚠️ Se descartan las que el motor marca como `notInstalled`. Estaban en la
+  /// lista y NO SUENAN: por eso el botón de escuchar "no hacía nada" — el
+  /// atleta pulsaba una voz que no está descargada en el teléfono. Ofrecer algo
+  /// que no funciona es peor que no ofrecerlo.
+  ///
+  /// Devuelve, por voz: `name`, `locale`, `necesitaRed` y `zona`
+  /// ('espana' | 'latam'). El sexo NO va: Android no lo dice. Su clase Voice
+  /// solo expone nombre, idioma, calidad, latencia y si requiere red — no hay
+  /// campo de género, así que ponerlo sería inventárselo.
   Future<List<Map<String, String>>> vocesDisponibles() async {
     try {
       final crudas = await _tts.getVoices;
       if (crudas is! List) return [];
-      return crudas
-          .map<Map<String, String>>((v) => {
-                'name':   '${(v as Map)['name'] ?? ''}',
-                'locale': '${v['locale'] ?? ''}',
-              })
-          .where((v) => v['locale']!.toLowerCase().startsWith('es'))
-          .toList();
-    } catch (_) {
+
+      final fuera = <Map<String, String>>[];
+      for (final v in crudas) {
+        if (v is! Map) continue;
+        final locale = '${v['locale'] ?? ''}';
+        if (!locale.toLowerCase().startsWith('es')) continue;
+
+        final features = '${v['features'] ?? ''}';
+        if (features.contains('notInstalled')) continue;   // no sonaría
+
+        final name = '${v['name'] ?? ''}';
+        if (name.isEmpty) continue;
+        // Las "…-language" son el alias genérico del idioma, no una voz
+        // concreta: aparecen duplicando a otra y confunden.
+        if (name.toLowerCase().endsWith('-language')) continue;
+
+        fuera.add({
+          'name': name,
+          'locale': locale,
+          'necesitaRed': '${v['network_required'] ?? 0}' == '1' ? 'si' : 'no',
+          'zona': locale.toLowerCase().startsWith('es-es') ? 'espana' : 'latam',
+        });
+      }
+
+      // España primero (es el atleta que tenemos), y dentro, las que funcionan
+      // sin internet antes que las que lo necesitan: en mitad de una carrera
+      // puede no haber cobertura.
+      fuera.sort((a, b) {
+        final z = (a['zona'] == 'espana' ? 0 : 1) - (b['zona'] == 'espana' ? 0 : 1);
+        if (z != 0) return z;
+        final r = (a['necesitaRed'] == 'no' ? 0 : 1) - (b['necesitaRed'] == 'no' ? 0 : 1);
+        if (r != 0) return r;
+        return a['name']!.compareTo(b['name']!);
+      });
+      return fuera;
+    } catch (e) {
+      // ignore: avoid_print
+      print('TTSVOZ ERROR listando: $e');
       return [];   // motor sin lista de voces → se queda la del sistema
     }
   }
 
-  /// Prueba una voz sin guardarla (el botón ▶ de los ajustes).
-  Future<void> probarVoz(Map<String, String> voz, String frase) async {
+  /// setVoice SOLO admite name+locale. Nuestros mapas llevan además `zona` y
+  /// `necesitaRed` para pintar la lista; pasarlos tal cual haría que el motor
+  /// rechazara la voz.
+  static Map<String, String> _soloIdentidad(Map<String, String> v) =>
+      {'name': v['name'] ?? '', 'locale': v['locale'] ?? 'es-ES'};
+
+  /// Prueba una voz sin guardarla (el botón ▶). Devuelve true si sonó.
+  Future<bool> probarVoz(Map<String, String> voz, String frase) async {
     try {
-      await _tts.setVoice(voz);
+      await init();               // sin esto, a la primera el motor no está listo
       await _tts.stop();
-      await _tts.speak(frase);
-    } catch (_) {/* si el motor la rechaza, no pasa nada */}
+      await _tts.setVoice(_soloIdentidad(voz));
+      final r = await _tts.speak(frase);
+      // speak devuelve 1 cuando el motor acepta el encargo.
+      return r == 1 || r == true;
+    } catch (e) {
+      // ANTES SE TRAGABA EL ERROR EN SILENCIO y por eso el ▶ "no hacía nada"
+      // sin dejar rastro por ningún lado. Ahora se ve y se avisa en pantalla.
+      // ignore: avoid_print
+      print('TTSVOZ ERROR probando ${voz['name']}: $e');
+      return false;
+    }
   }
 
   Future<void> guardarVoz(Map<String, String> voz) async {
@@ -84,7 +139,12 @@ class AudioCueService {
     await aplicarVozGuardada();
   }
 
+  bool _aplicandoVoz = false;
   Future<void> aplicarVozGuardada() async {
+    // init() llama aquí y esto llamaba a init(): sin este cerrojo se quedaban
+    // dando vueltas el uno al otro.
+    if (_aplicandoVoz) return;
+    _aplicandoVoz = true;
     try {
       final p = await SharedPreferences.getInstance();
       final nombre = p.getString(_clavePrefVoz);
@@ -94,6 +154,7 @@ class AudioCueService {
         'locale': p.getString(_clavePrefIdioma) ?? 'es-ES',
       });
     } catch (_) {/* voz desinstalada → se queda la del sistema */}
+    finally { _aplicandoVoz = false; }
   }
 
   // ── Session lifecycle ─────────────────────────────────────────
