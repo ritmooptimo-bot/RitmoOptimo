@@ -27,6 +27,47 @@ final competicionesProvider =
   }
 });
 
+/// Una carrera vista desde el calendario: solo lo que hace falta para pintarla.
+class CarreraDelDia {
+  final String nombre;
+  final bool esObjetivo;
+  const CarreraDelDia(this.nombre, this.esObjetivo);
+}
+
+/// Carreras de un mes concreto, indexadas por día.
+///
+/// Si un día cae más de una —el 4 de octubre David tiene la Milla Verde en
+/// Chiclana y el Cross del Colorado en Conil— manda la de mayor rango: en el
+/// calendario se ve el trofeo, y el detalle está a un toque.
+Map<int, CarreraDelDia> carrerasDelMes(
+    Map<String, dynamic>? data, DateTime mes) {
+  final fuera = <int, CarreraDelDia>{};
+  final lista = (data?['competitions'] as List?) ?? const [];
+
+  for (final c in lista) {
+    if (c is! Map) continue;
+    final iso = c['fecha']?.toString() ?? '';
+    DateTime f;
+    try {
+      f = DateTime.parse(iso);
+    } catch (_) {
+      continue;
+    }
+    if (f.year != mes.year || f.month != mes.month) continue;
+
+    final carrera = CarreraDelDia(
+      c['name']?.toString() ?? 'Competición',
+      c['role'] == 'primario',
+    );
+    // El objetivo nunca lo tapa una popular, llegue en el orden que llegue.
+    final previa = fuera[f.day];
+    if (previa == null || (!previa.esObjetivo && carrera.esObjetivo)) {
+      fuera[f.day] = carrera;
+    }
+  }
+  return fuera;
+}
+
 String fechaLarga(String iso) {
   try {
     const m = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
@@ -64,18 +105,39 @@ class AvisoCarreras extends ConsumerWidget {
       titulo = '¿Tienes alguna competición a la vista?';
       sub = 'Apúntala y organizo tu plan para que llegues en tu mejor versión.';
     } else {
-      final prox = lista.first as Map<String, dynamic>;
+      // LA CUENTA ATRÁS VA A SU OBJETIVO, NO A LA SIGUIENTE CARRERA CUALQUIERA.
+      //
+      // Contaba los días de la primera del calendario. Con las 10 carreras de
+      // David eso significaba contarle los de La Barrosa —una popular de 5 km—
+      // teniendo su objetivo el 8 de noviembre. El número era correcto y la
+      // pregunta que responde, la equivocada: lo que organiza su plan es el
+      // objetivo; el resto son escalones.
+      final hoy = DateTime.now();
+      final futuras = lista.whereType<Map>().where((c) {
+        try {
+          return !DateTime.parse(c['fecha'].toString()).isBefore(
+              DateTime(hoy.year, hoy.month, hoy.day));
+        } catch (_) { return false; }
+      }).toList();
+
+      final destino = futuras.firstWhere((c) => c['role'] == 'primario',
+          orElse: () => futuras.isNotEmpty ? futuras.first : lista.first as Map);
+
       int? dias;
       try {
-        dias = DateTime.parse(prox['fecha'] as String)
-            .difference(DateTime.now()).inDays + 1;
+        final f = DateTime.parse(destino['fecha'].toString());
+        dias = DateTime(f.year, f.month, f.day)
+            .difference(DateTime(hoy.year, hoy.month, hoy.day)).inDays;
       } catch (_) {}
-      final esPrincipal = prox['role'] == 'primario';
-      icono = Icons.flag;
+
+      final esPrincipal = destino['role'] == 'primario';
+      icono = esPrincipal ? Icons.emoji_events : Icons.flag;
       color = esPrincipal ? skin.accent : skin.textSecondary;
-      titulo = prox['name']?.toString() ?? 'Tu próxima competición';
+      titulo = destino['name']?.toString() ?? 'Tu próxima competición';
       sub = [
-        if (dias != null && dias > 0) 'En $dias días',
+        if (dias != null && dias > 1) 'Faltan $dias días',
+        if (dias == 1) 'Es mañana',
+        if (dias == 0) 'ES HOY',
         if (esPrincipal) 'Tu objetivo principal',
       ].join(' · ');
       if (sub.isEmpty) sub = 'Toca para ver el detalle';

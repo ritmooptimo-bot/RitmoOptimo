@@ -261,6 +261,12 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
       ]);
     }
 
+    // Sus carreras del mes que se está viendo. Si el provider aún no ha
+    // resuelto, el mapa va vacío y el calendario se pinta como siempre: la
+    // marca de la carrera nunca puede retrasar ni romper el plan.
+    final carrerasMes = carrerasDelMes(
+        ref.watch(competicionesProvider).valueOrNull, state.month);
+
     final rejilla = <Widget>[
       _PlanCalendarGrid(
         skin: skin,
@@ -269,6 +275,8 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
         selectedDay: _selectedDay,
         onDayTap: (d) =>
             setState(() => _selectedDay = _selectedDay == d ? null : d),
+        carreras: carrerasMes,
+        onCarreraTap: () => _abrirCompeticiones(context),
       ),
       // Botón "Hoy": vuelve a la agenda del día actual (limpia filtro / mes).
       if (_selectedDay != null || !isCurrentMonth)
@@ -536,6 +544,10 @@ class _PlanCalendarGrid extends StatelessWidget {
   final Map<int, List<Map<String, dynamic>>> byDay;
   final int? selectedDay;
   final ValueChanged<int> onDayTap;
+  // Sus carreras del mes. El calendario solo sabía de entrenamientos: el día de
+  // la carrera se veía igual que un martes cualquiera.
+  final Map<int, CarreraDelDia> carreras;
+  final VoidCallback onCarreraTap;
 
   const _PlanCalendarGrid({
     required this.skin,
@@ -543,6 +555,8 @@ class _PlanCalendarGrid extends StatelessWidget {
     required this.byDay,
     required this.selectedDay,
     required this.onDayTap,
+    required this.carreras,
+    required this.onCarreraTap,
   });
 
   @override
@@ -611,8 +625,15 @@ class _PlanCalendarGrid extends StatelessWidget {
                 }
               }
 
+              final carrera = carreras[day];
+
               return GestureDetector(
-                onTap: sessions.isEmpty ? null : () => onDayTap(day),
+                // Si el día solo tiene carrera (no hay entreno), tocarlo lleva a
+                // "Mis competiciones". Donde hay sesión manda la sesión: el gesto
+                // de siempre no cambia.
+                onTap: sessions.isNotEmpty
+                    ? () => onDayTap(day)
+                    : (carrera != null ? onCarreraTap : null),
                 child: Container(
                   decoration: BoxDecoration(
                     color: isSelected
@@ -626,32 +647,59 @@ class _PlanCalendarGrid extends StatelessWidget {
                             color: skin.accent.withValues(alpha: 0.5), width: 1)
                         : null,
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  child: Stack(
                     children: [
-                      Text(
-                        '$day',
-                        style: TextStyle(
-                          color: isSelected
-                              ? skin.accent
-                              : sessions.isNotEmpty
-                                  ? skin.textPrimary
-                                  : skin.textMuted,
-                          fontSize: 12,
-                          fontWeight: sessions.isNotEmpty
-                              ? FontWeight.w700
-                              : FontWeight.w400,
-                        ),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            '$day',
+                            style: TextStyle(
+                              color: isSelected
+                                  ? skin.accent
+                                  : (sessions.isNotEmpty || carrera != null)
+                                      ? skin.textPrimary
+                                      : skin.textMuted,
+                              fontSize: 12,
+                              fontWeight: (sessions.isNotEmpty || carrera != null)
+                                  ? FontWeight.w700
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                          if (dotColor != null) ...[
+                            const SizedBox(height: 2),
+                            Container(
+                              width: 5,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                  color: dotColor, shape: BoxShape.circle),
+                            ),
+                          ],
+                        ],
                       ),
-                      if (dotColor != null) ...[
-                        const SizedBox(height: 2),
-                        Container(
-                          width: 5,
-                          height: 5,
-                          decoration: BoxDecoration(
-                              color: dotColor, shape: BoxShape.circle),
+
+                      // ── SU CARRERA ────────────────────────────────────
+                      //
+                      // El TROFEO es solo para el objetivo. Con 10 carreras
+                      // apuntadas, marcarlas todas igual llenaría el mes de
+                      // trofeos y ninguno diría nada — y el rojo, además, ya
+                      // significa "sesión fallada" en este mismo calendario.
+                      // Las de preparación llevan un dorsal discreto: se corren,
+                      // pero no son el día grande.
+                      if (carrera != null)
+                        Positioned(
+                          top: 1,
+                          right: 1,
+                          child: Icon(
+                            carrera.esObjetivo
+                                ? Icons.emoji_events
+                                : Icons.flag_outlined,
+                            size: carrera.esObjetivo ? 13 : 11,
+                            color: carrera.esObjetivo
+                                ? skin.accent
+                                : skin.textMuted,
+                          ),
                         ),
-                      ],
                     ],
                   ),
                 ),
