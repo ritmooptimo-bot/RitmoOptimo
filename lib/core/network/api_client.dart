@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_auth_client.dart';
 
@@ -169,6 +170,35 @@ class ApiClient {
 
   Future<void> deleteCompetition(String id) async {
     await _dio.delete('/athlete/competitions/$id');
+  }
+
+  // ── OPINIÓN SOBRE LA APP (piloto) ────────────────────────────
+  // No confundir con el comentario del ENTRENO: ese va al entrenador para
+  // ajustar la siguiente sesión y es de todos. Esto es para el producto y solo
+  // se le pregunta a quien el administrador marque.
+  //
+  // ⚠️ URL COMPLETA a propósito: el baseUrl de este cliente ya termina en
+  // /api/training-plan, así que un '/api/app/...' se quedaría pegado detrás y
+  // saldría .../api/training-plan/api/app/... Con http delante, Dio no lo toca.
+  static const _baseApp = 'https://ritmooptimo.tech/api/app';
+
+  Future<bool> appFeedbackHabilitado() async {
+    final r = await _dio.get('$_baseApp/feedback/enabled');
+    return r.data?['enabled'] == true;
+  }
+
+  Future<void> enviarOpinionApp({required String texto, String? sessionId}) async {
+    String version = '';
+    try {
+      // Del propio paquete: escribir la versión a mano aquí se desincroniza
+      // del pubspec a la primera.
+      version = (await PackageInfo.fromPlatform()).version;
+    } catch (_) {/* sin versión, no es motivo para perder la opinión */}
+    await _dio.post('$_baseApp/feedback', data: {
+      'texto': texto,
+      if (sessionId != null) 'session_id': sessionId,
+      if (version.isNotEmpty) 'app_version': version,
+    });
   }
 
   // ── TU PROGRESO: eficiencia aeróbica, desacople y carga ──────

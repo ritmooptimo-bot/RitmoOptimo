@@ -56,11 +56,17 @@ class _SessionCompleteScreenState
   bool _sensorDataAvailable = false;
   GpsTrack? _gpsTrack;
 
+  // Opinión sobre la APP (piloto). Solo para los deportistas que el
+  // administrador marque; el servidor lo vuelve a comprobar al guardar.
+  bool _opinionAppActiva = false;
+  final _opinionCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     // Rellenar desde sensores tras el primer frame
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoFill());
+    _comprobarOpinionApp();
     // Preparar el dictado por voz (no pide permiso hasta que se pulsa el micro)
     _stt.initialize(
       onStatus: (s) {
@@ -223,6 +229,26 @@ class _SessionCompleteScreenState
     super.dispose();
   }
 
+  // ¿A este deportista se le pide opinión de la app? Si falla, NO se pide:
+  // molestar a quien no toca es peor que perder una opinión.
+  Future<void> _comprobarOpinionApp() async {
+    try {
+      final activa = await ref.read(apiClientProvider).appFeedbackHabilitado();
+      if (mounted && activa) setState(() => _opinionAppActiva = true);
+    } catch (_) {/* silencio */}
+  }
+
+  /// La opinión se manda APARTE del entreno y NUNCA bloquea el guardado: si
+  /// falla, el entrenamiento ya está a salvo y solo se pierde el comentario.
+  Future<void> _enviarOpinionApp() async {
+    final texto = _opinionCtrl.text.trim();
+    if (!_opinionAppActiva || texto.isEmpty) return;
+    try {
+      await ref.read(apiClientProvider).enviarOpinionApp(
+        texto: texto, sessionId: widget.sessionId);
+    } catch (_) {/* no se interrumpe el cierre de la sesión */}
+  }
+
   Future<void> _save() async {
     // Teclado español = COMA decimal ("7,86"). double.tryParse la rechazaba y el
     // `?? 0` convertía la distancia en 0 km EN SILENCIO (kilómetros perdidos).
@@ -305,6 +331,8 @@ class _SessionCompleteScreenState
           },
         },
       );
+      // Después de guardar el entreno, nunca antes: la sesión es lo importante.
+      await _enviarOpinionApp();
       if (mounted) {
         ref.read(dashboardProvider.notifier).load();
         // AL RESUMEN, NO A INICIO.
@@ -532,6 +560,65 @@ class _SessionCompleteScreenState
                 ),
               ),
             ),
+
+            // ── OPINIÓN SOBRE LA APP (solo para los del piloto) ──────────
+            //
+            // Es OTRA cosa que el comentario de arriba: eso va al entrenador
+            // para ajustar el siguiente entreno, y esto es para mejorar la
+            // aplicación. Por eso está separado, con su propio título y su
+            // propio color: si se mezclaran, el atleta acabaría contándole al
+            // entrenador que un botón se ve mal.
+            //
+            // Solo aparece si el administrador ha marcado a este deportista.
+            if (_opinionAppActiva) ...[
+              const SizedBox(height: 28),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: skin.backgroundCard,
+                  borderRadius: BorderRadius.circular(skin.cardRadius),
+                  border: Border.all(color: skin.accent.withValues(alpha: 0.35)),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Icon(Icons.lightbulb_outline, size: 18, color: skin.accent),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text('¿Qué mejorarías de la app?',
+                          style: TextStyle(color: skin.textPrimary,
+                              fontSize: 14, fontWeight: FontWeight.w700)),
+                    ),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Esto no lo ve tu entrenador: es para mejorar la aplicación '
+                    'entre todos. Cuéntanos lo que sea, por pequeño que parezca.',
+                    style: TextStyle(color: skin.textMuted, fontSize: 11.5, height: 1.35),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _opinionCtrl,
+                    maxLines: 3,
+                    style: TextStyle(color: skin.textPrimary),
+                    decoration: InputDecoration(
+                      hintText: 'Lo que cambiarías, lo que te sobra, lo que echas de menos…',
+                      hintStyle: TextStyle(color: skin.textMuted),
+                      filled: true,
+                      fillColor: skin.background,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(skin.cardRadius),
+                        borderSide: BorderSide(color: skin.border)),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(skin.cardRadius),
+                        borderSide: BorderSide(color: skin.border)),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(skin.cardRadius),
+                        borderSide: BorderSide(color: skin.accent, width: 2)),
+                    ),
+                  ),
+                ]),
+              ),
+            ],
 
             const SizedBox(height: 32),
 

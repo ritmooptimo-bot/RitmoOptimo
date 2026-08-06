@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/skin_provider.dart';
 import '../../models/sport.dart';
+import '../../config/app_flags.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/pending_tracks.dart';
@@ -91,6 +92,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               SliverToBoxAdapter(
                 child: _Header(skin: skin, dashboard: dashboard),
               ),
+
+              // ── MODO PRUEBA ──────────────────────────────
+              // Visible a proposito: el deportista tiene que saber que esta
+              // ayudando a probar la app y que puede encontrarse cosas a medias.
+              // Cuando la app salga de piloto se pone kModoPrueba en false y
+              // desaparece de todas partes.
+              if (kModoPrueba)
+                SliverToBoxAdapter(
+                  child: Container(
+                    margin: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: skin.accent.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(skin.cardRadius),
+                      border: Border.all(color: skin.accent.withValues(alpha: 0.35)),
+                    ),
+                    child: Row(children: [
+                      Icon(Icons.science_outlined, size: 16, color: skin.accent),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'MODO PRUEBA · estas ayudando a probar la app. Si ves algo raro, cuentanoslo.',
+                          style: TextStyle(color: skin.accent, fontSize: 11, fontWeight: FontWeight.w600, height: 1.3),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
 
               if (dashboard.isLoading)
                 SliverFillRemaining(

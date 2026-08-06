@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Servicio de audio para sesiones guiadas.
 /// Genera beeps WAV en memoria (sin archivos de asset).
@@ -28,12 +29,71 @@ class AudioCueService {
     await _tts.setSpeechRate(0.42);
     await _tts.setVolume(1.0);
     await _tts.setPitch(1.0);
+    await aplicarVozGuardada();
 
     _shortBeep = buildBeepWav(frequency: 880, durationMs: 90);
     _longBeep  = buildBeepWav(frequency: 660, durationMs: 600);
     _silence   = _buildSilenceWav(durationMs: 2000);
 
     _initialized = true;
+  }
+
+  // ── VOZ: hombre o mujer ───────────────────────────────────────
+  //
+  // En Android los motores de voz NO dicen el sexo de cada voz: solo dan
+  // nombres como "es-es-x-eef-local". Así que no se puede etiquetar con
+  // certeza cuál es de hombre y cuál de mujer, y no vamos a adivinarlo y
+  // ponerle un cartel que puede estar mal.
+  //
+  // Lo que sí se puede es dejar que el atleta las ESCUCHE y elija. La pantalla
+  // de ajustes las lista con un botón de prueba; aquí solo se guarda y aplica
+  // la que eligió.
+  static const _clavePrefVoz = 'voz_tts_nombre';
+  static const _clavePrefIdioma = 'voz_tts_idioma';
+
+  /// Voces en español que ofrece este móvil.
+  Future<List<Map<String, String>>> vocesDisponibles() async {
+    try {
+      final crudas = await _tts.getVoices;
+      if (crudas is! List) return [];
+      return crudas
+          .map<Map<String, String>>((v) => {
+                'name':   '${(v as Map)['name'] ?? ''}',
+                'locale': '${v['locale'] ?? ''}',
+              })
+          .where((v) => v['locale']!.toLowerCase().startsWith('es'))
+          .toList();
+    } catch (_) {
+      return [];   // motor sin lista de voces → se queda la del sistema
+    }
+  }
+
+  /// Prueba una voz sin guardarla (el botón ▶ de los ajustes).
+  Future<void> probarVoz(Map<String, String> voz, String frase) async {
+    try {
+      await _tts.setVoice(voz);
+      await _tts.stop();
+      await _tts.speak(frase);
+    } catch (_) {/* si el motor la rechaza, no pasa nada */}
+  }
+
+  Future<void> guardarVoz(Map<String, String> voz) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_clavePrefVoz, voz['name'] ?? '');
+    await p.setString(_clavePrefIdioma, voz['locale'] ?? 'es-ES');
+    await aplicarVozGuardada();
+  }
+
+  Future<void> aplicarVozGuardada() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final nombre = p.getString(_clavePrefVoz);
+      if (nombre == null || nombre.isEmpty) return;   // la del sistema
+      await _tts.setVoice({
+        'name': nombre,
+        'locale': p.getString(_clavePrefIdioma) ?? 'es-ES',
+      });
+    } catch (_) {/* voz desinstalada → se queda la del sistema */}
   }
 
   // ── Session lifecycle ─────────────────────────────────────────

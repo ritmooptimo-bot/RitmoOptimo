@@ -12,6 +12,7 @@ import '../../core/network/api_client.dart';
 import '../../core/ble/ble_service.dart';
 import '../../core/gps/gps_service.dart';
 import '../../models/sport.dart';
+import 'voice_picker_sheet.dart';
 import '../../core/audio/audio_cue_service.dart';
 import '../../core/audio/session_audio_controller.dart';
 import 'block_progress_widget.dart';
@@ -462,6 +463,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         ),
         backgroundColor: skin.backgroundSecondary,
         actions: [
+          // Elegir la voz que guía la sesión. Antes de empezar, que es cuando
+          // tiene sentido probarla: con la sesión en marcha estorbaría.
+          if (!session.isRunning && !isCompleted)
+            IconButton(
+              icon: Icon(Icons.record_voice_over_outlined, color: skin.textMuted),
+              tooltip: 'Voz de la sesión',
+              onPressed: () => VoicePickerSheet.mostrar(context, _audioCueService),
+            ),
           if (session.isRunning)
             TextButton(
               onPressed: _onFinish,
