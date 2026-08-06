@@ -136,11 +136,13 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
       body: Column(
         children: [
           _ViewToggle(skin: skin, view: _view, onChanged: _switchTo),
-          // LA PUERTA PRINCIPAL. Esperar a que el deportista descubra un icono en
-          // una esquina, para algo que hace tres veces al año, es esperar sentado.
-          // Aquí se ve sin buscar: si no tiene ninguna carrera, se le invita; si
-          // tiene, se le recuerda cuál es la próxima y cuánto queda.
-          AvisoCarreras(onTap: () => _abrirCompeticiones(context)),
+          // ⚠️ EL AVISO DE COMPETICIONES YA NO VA AQUÍ.
+          // Estaba fijo entre el selector y el contenido, y con el calendario de
+          // seis filas debajo a la lista de sesiones le quedaban cuatro píxeles:
+          // el scroll no se movía porque no había recorrido, y al tocar un día
+          // las sesiones se pintaban en esa franja invisible. Ahora va DENTRO de
+          // cada vista, de modo que se desliza con el resto y deja de robar
+          // altura fija.
           Expanded(
             child: _view == _PlanView.list
                 ? _buildList(skin)
@@ -170,17 +172,28 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
           color: skin.accent,
           backgroundColor: skin.backgroundCard,
           child: sessions.isEmpty
-              ? _EmptyState(
-                  skin: skin,
-                  icon: Icons.calendar_today_outlined,
-                  title: 'Sin sesiones esta semana',
-                  subtitle: '$weekFrom → $weekTo',
+              ? ListView(
+                  children: [
+                    AvisoCarreras(onTap: () => _abrirCompeticiones(context)),
+                    _EmptyState(
+                      skin: skin,
+                      icon: Icons.calendar_today_outlined,
+                      title: 'Sin sesiones esta semana',
+                      subtitle: '$weekFrom → $weekTo',
+                    ),
+                  ],
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: sessions.length,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  // +1: el aviso de competiciones es el primer elemento del
+                  // scroll, no una franja fija por encima que robe altura.
+                  itemCount: sessions.length + 1,
                   itemBuilder: (context, i) {
-                    final s = sessions[i] as Map<String, dynamic>;
+                    if (i == 0) {
+                      return AvisoCarreras(
+                          onTap: () => _abrirCompeticiones(context));
+                    }
+                    final s = sessions[i - 1] as Map<String, dynamic>;
                     return _SessionTile(
                         skin: skin, session: s, onTap: () => _openSession(s));
                   },
@@ -206,93 +219,126 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
           }).toList();
     final isCurrentMonth = _isCurrentMonth(state.month);
 
-    return Column(
-      children: [
-        _MonthHeader(
-          skin: skin,
-          month: state.month,
-          onPrev: () {
-            setState(() => _selectedDay = null);
-            notifier.goToPrevMonth();
-          },
-          onNext: () {
-            setState(() => _selectedDay = null);
-            notifier.goToNextMonth();
-          },
-        ),
-        if (state.isLoading)
-          Expanded(
-            child: Center(child: CircularProgressIndicator(color: skin.accent)),
-          )
-        else if (state.error != null)
-          Expanded(
-            child: _ErrorView(
-              skin: skin,
-              msg: state.error!.replaceAll('Exception:', '').trim(),
-              onRetry: () => notifier.load(),
-            ),
-          )
-        else ...[
-          _PlanCalendarGrid(
+    // ⚠️ ESTO ERA UN Column CON UN Expanded AL FINAL, Y POR ESO SE ROMPIÓ.
+    // Cabecera del mes + rejilla de seis filas + el aviso de competiciones se
+    // comían la pantalla, y a la lista de sesiones —lo único que importa aquí—
+    // le quedaba una franja de unos cien píxeles: el scroll no se movía porque
+    // no había recorrido, y al tocar un día las sesiones se pintaban en esa
+    // franja invisible. De ahí "le doy a la sesión de mañana y no me la
+    // muestra": sí se pintaba, pero debajo de la barra.
+    final cabecera = <Widget>[
+      AvisoCarreras(onTap: () => _abrirCompeticiones(context)),
+      _MonthHeader(
+        skin: skin,
+        month: state.month,
+        onPrev: () {
+          setState(() => _selectedDay = null);
+          notifier.goToPrevMonth();
+        },
+        onNext: () {
+          setState(() => _selectedDay = null);
+          notifier.goToNextMonth();
+        },
+      ),
+    ];
+
+    if (state.isLoading) {
+      return Column(children: [
+        ...cabecera,
+        Expanded(child: Center(child: CircularProgressIndicator(color: skin.accent))),
+      ]);
+    }
+    if (state.error != null) {
+      return Column(children: [
+        ...cabecera,
+        Expanded(
+          child: _ErrorView(
             skin: skin,
-            month: state.month,
-            byDay: state.byDay,
-            selectedDay: _selectedDay,
-            onDayTap: (d) => setState(
-                () => _selectedDay = _selectedDay == d ? null : d),
+            msg: state.error!.replaceAll('Exception:', '').trim(),
+            onRetry: () => notifier.load(),
           ),
-          // Botón "Hoy": vuelve a la agenda del día actual (limpia filtro / mes).
-          if (_selectedDay != null || !isCurrentMonth)
-            Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 12, top: 2),
-                child: TextButton.icon(
-                  onPressed: () {
-                    setState(() => _selectedDay = null);
-                    if (!isCurrentMonth) {
-                      _calendarLoaded = true;
-                      ref
-                          .read(planCalendarProvider.notifier)
-                          .goToCurrentMonth();
-                    }
-                  },
-                  icon: Icon(Icons.today, size: 16, color: skin.accent),
-                  label: Text('Hoy',
-                      style: TextStyle(
-                          color: skin.accent, fontWeight: FontWeight.w600)),
-                ),
+        ),
+      ]);
+    }
+
+    final rejilla = <Widget>[
+      _PlanCalendarGrid(
+        skin: skin,
+        month: state.month,
+        byDay: state.byDay,
+        selectedDay: _selectedDay,
+        onDayTap: (d) =>
+            setState(() => _selectedDay = _selectedDay == d ? null : d),
+      ),
+      // Botón "Hoy": vuelve a la agenda del día actual (limpia filtro / mes).
+      if (_selectedDay != null || !isCurrentMonth)
+        Align(
+          alignment: Alignment.centerRight,
+          child: Padding(
+            padding: const EdgeInsets.only(right: 12, top: 2),
+            child: TextButton.icon(
+              onPressed: () {
+                setState(() => _selectedDay = null);
+                if (!isCurrentMonth) {
+                  _calendarLoaded = true;
+                  ref.read(planCalendarProvider.notifier).goToCurrentMonth();
+                }
+              },
+              icon: Icon(Icons.today, size: 16, color: skin.accent),
+              label: Text('Hoy',
+                  style: TextStyle(
+                      color: skin.accent, fontWeight: FontWeight.w600)),
+            ),
+          ),
+        ),
+    ];
+
+    // DÍA SELECCIONADO: todo en un solo scroll. El calendario se desliza hacia
+    // arriba y las sesiones de ese día disponen de la pantalla entera.
+    if (filtered != null) {
+      return ListView(
+        padding: const EdgeInsets.only(bottom: 16),
+        children: [
+          ...cabecera,
+          ...rejilla,
+          if (filtered.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Center(
+                child: Text('Sin sesiones este día',
+                    style: TextStyle(color: skin.textMuted, fontSize: 14)),
               ),
             )
           else
-            const SizedBox(height: 8),
-          Expanded(
-            child: filtered != null
-                ? (filtered.isEmpty
-                    ? Center(
-                        child: Text('Sin sesiones este día',
-                            style: TextStyle(
-                                color: skin.textMuted, fontSize: 14)),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                        itemCount: filtered.length,
-                        itemBuilder: (_, i) {
-                          final s = Map<String, dynamic>.from(filtered[i]);
-                          return _SessionTile(
-                              skin: skin,
-                              session: s,
-                              onTap: () => _openSession(s),
-                              isToday: _isTodayDate(s));
-                        },
-                      ))
-                : _AnchoredAgenda(
+            ...filtered.map((raw) {
+              final s = Map<String, dynamic>.from(raw);
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                child: _SessionTile(
                     skin: skin,
-                    sessions: state.sessions,
-                    onTap: _openSession,
-                  ),
-          ),
+                    session: s,
+                    onTap: () => _openSession(s),
+                    isToday: _isTodayDate(s)),
+              );
+            }),
         ],
+      );
+    }
+
+    // SIN DÍA SELECCIONADO: la agenda anclada en HOY tiene su propio scroll
+    // (permite subir a días pasados), así que se queda con el espacio restante
+    // — que ahora es de verdad, porque el aviso ya no roba altura fija.
+    return Column(
+      children: [
+        ...cabecera,
+        ...rejilla,
+        Expanded(
+          child: _AnchoredAgenda(
+            skin: skin,
+            sessions: state.sessions,
+            onTap: _openSession,
+          ),
+        ),
       ],
     );
   }
