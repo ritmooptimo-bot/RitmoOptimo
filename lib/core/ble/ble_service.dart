@@ -37,6 +37,7 @@ class BleService {
   Future<void> connect(BluetoothDevice device) async {
     if (_device != null) await disconnect();
     _device = device;
+    _desconexionPedida = false;
 
     await device.connect(autoConnect: false, timeout: const Duration(seconds: 15));
     _stateController.add(true);
@@ -44,13 +45,60 @@ class BleService {
     _stateSub = device.connectionState.listen((state) {
       final connected = state == BluetoothConnectionState.connected;
       _stateController.add(connected);
-      if (!connected) _hrSub?.cancel();
+      if (!connected) {
+        _hrSub?.cancel();
+        // ⚠️ ANTES SE QUEDABA AQUÍ. Se cancelaba la suscripción y no había ni
+        // un intento de volver. Sesión del 06/08: la banda estaba puesta y
+        // funcionando —el Fenix 7 registró pulso los 45 minutos— pero el enlace
+        // con el móvil se cayó en el minuto 5:30 y la app se quedó SIN FC el
+        // resto del entreno. 40 minutos perdidos por un corte de unos segundos.
+        _intentarReconectar();
+      }
     });
 
     await _subscribeHR(device);
   }
 
+  // ── RECONEXIÓN ────────────────────────────────────────────────────────
+  // Un corte de Bluetooth es lo más normal del mundo: el móvil en el bolsillo,
+  // el brazo tapando la antena, el reloj peleando por la banda. Lo que no es
+  // normal es no volver a intentarlo.
+  //
+  // Reintento con espera creciente (2, 4, 8… hasta 30 s) y SIN límite de
+  // intentos mientras dure la sesión: si vuelve a estar a tiro en el minuto 40,
+  // se recuperan los últimos cinco.
+  bool _desconexionPedida = false;
+  bool _reconectando      = false;
+
+  Future<void> _intentarReconectar() async {
+    if (_desconexionPedida || _reconectando || _device == null) return;
+    _reconectando = true;
+    var espera = 2;
+
+    while (!_desconexionPedida && _device != null) {
+      await Future.delayed(Duration(seconds: espera));
+      if (_desconexionPedida || _device == null) break;
+      if (_device!.isConnected) break;   // volvió solo
+
+      try {
+        await _device!.connect(autoConnect: false, timeout: const Duration(seconds: 10));
+        await _subscribeHR(_device!);
+        _stateController.add(true);
+        break;
+      } catch (_) {
+        // Sigue fuera de alcance o apagada: se espera un poco más.
+        espera = espera >= 30 ? 30 : espera * 2;
+      }
+    }
+    _reconectando = false;
+  }
+
   Future<void> _subscribeHR(BluetoothDevice device) async {
+    // Al reconectar esto se llama otra vez: sin cancelar la anterior quedarían
+    // dos suscripciones vivas y cada latido entraría por duplicado en la media.
+    await _hrSub?.cancel();
+    _hrSub = null;
+
     // Breve pausa: el HRM-Pro Plus necesita ~300 ms tras la conexión BLE
     // para tener el GATT listo antes de discover services.
     await Future.delayed(const Duration(milliseconds: 300));
@@ -81,6 +129,9 @@ class BleService {
   }
 
   Future<void> disconnect() async {
+    // Marca que la desconexión es NUESTRA: sin esto, el bucle de reconexión se
+    // pondría a perseguir una banda que el propio atleta acaba de soltar.
+    _desconexionPedida = true;
     _hrSub?.cancel();
     _stateSub?.cancel();
     await _device?.disconnect();
