@@ -227,7 +227,12 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
     // franja invisible. De ahí "le doy a la sesión de mañana y no me la
     // muestra": sí se pintaba, pero debajo de la barra.
     final cabecera = <Widget>[
-      AvisoCarreras(onTap: () => _abrirCompeticiones(context)),
+      // Con un día tocado, la tarjeta del objetivo se quita: son 270 píxeles que
+      // empujaban la sesión de ese día fuera de la pantalla y obligaban a
+      // desplazarse para verla. Quien toca un día quiere ver ESE día, no la
+      // cuenta atrás — que sigue ahí en cuanto suelta la selección.
+      if (_selectedDay == null)
+        AvisoCarreras(onTap: () => _abrirCompeticiones(context)),
       _MonthHeader(
         skin: skin,
         month: state.month,
@@ -333,21 +338,25 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
       );
     }
 
-    // SIN DÍA SELECCIONADO: la agenda anclada en HOY tiene su propio scroll
-    // (permite subir a días pasados), así que se queda con el espacio restante
-    // — que ahora es de verdad, porque el aviso ya no roba altura fija.
-    return Column(
-      children: [
-        ...cabecera,
-        ...rejilla,
-        Expanded(
-          child: _AnchoredAgenda(
-            skin: skin,
-            sessions: state.sessions,
-            onTap: _openSession,
-          ),
-        ),
-      ],
+    // SIN DÍA SELECCIONADO: UN SOLO SCROLL, calendario incluido.
+    //
+    // ⚠️ ESTO VOLVIÓ A SER UN Column CON UN Expanded AL FINAL, Y VOLVIÓ A ROMPERSE.
+    //
+    // Con Expanded, la agenda se queda con "lo que sobre" — y lo que sobra
+    // depende de cuánto ocupen el aviso de carreras y la rejilla de seis filas.
+    // Basta con que el aviso crezca una línea (pasó justo al hacer que contara
+    // los días hasta el objetivo: "Cross Pinar de Hierro · Faltan 94 días · Tu
+    // objetivo principal" ocupa dos líneas donde antes había una) para que a las
+    // sesiones les quede una franja de unos cien píxeles debajo del calendario.
+    //
+    // La solución no es recortar el aviso: es que NADIE reparta altura fija. El
+    // calendario entra en el mismo scroll que la agenda y se desliza hacia
+    // arriba al bajar, dejando la pantalla entera para las sesiones.
+    return _AnchoredAgenda(
+      skin: skin,
+      sessions: state.sessions,
+      onTap: _openSession,
+      cabecera: [...cabecera, ...rejilla],
     );
   }
 }
@@ -361,8 +370,17 @@ class _AnchoredAgenda extends StatelessWidget {
   final SkinConfig skin;
   final List<Map<String, dynamic>> sessions;
   final void Function(Map<String, dynamic>) onTap;
-  const _AnchoredAgenda(
-      {required this.skin, required this.sessions, required this.onTap});
+  /// Aviso de carreras + cabecera del mes + rejilla. Van DENTRO de este scroll,
+  /// no encima: si se quedan fuera, se reparten la altura con la agenda y a las
+  /// sesiones les toca la miseria que sobre (ver el comentario en el build).
+  final List<Widget> cabecera;
+
+  const _AnchoredAgenda({
+    required this.skin,
+    required this.sessions,
+    required this.onTap,
+    this.cabecera = const [],
+  });
 
   static String _dateOf(Map<String, dynamic> s) {
     final raw = (s['scheduled_date'] ?? s['session_date']) as String? ?? '';
@@ -380,10 +398,21 @@ class _AnchoredAgenda extends StatelessWidget {
     final past = all.where((s) => _dateOf(s).compareTo(today) < 0).toList()
       ..sort((a, b) => _dateOf(b).compareTo(_dateOf(a))); // desc: reciente arriba
 
+    // Los tres caminos de abajo pintan la cabecera: se vea el mes que se vea, y
+    // haya o no sesiones, el calendario tiene que estar.
     if (future.isEmpty && past.isEmpty) {
-      return Center(
-        child: Text('Sin sesiones este mes',
-            style: TextStyle(color: skin.textMuted, fontSize: 14)),
+      return ListView(
+        padding: const EdgeInsets.only(bottom: 16),
+        children: [
+          ...cabecera,
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Text('Sin sesiones este mes',
+                  style: TextStyle(color: skin.textMuted, fontSize: 14)),
+            ),
+          ),
+        ],
       );
     }
 
@@ -396,13 +425,22 @@ class _AnchoredAgenda extends StatelessWidget {
     // Sin hoy/futuro → lista normal ascendente de los pasados.
     if (future.isEmpty) {
       final asc = [...past]..sort((a, b) => _dateOf(a).compareTo(_dateOf(b)));
-      return ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        itemCount: asc.length,
-        itemBuilder: (_, i) => tile(asc[i]),
+      return ListView(
+        padding: const EdgeInsets.only(bottom: 16),
+        children: [
+          ...cabecera,
+          ...asc.map((s) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: tile(s),
+              )),
+        ],
       );
     }
 
+    // La cabecera va en el sliver CENTRO y antes que hoy: al abrir la pantalla,
+    // el desplazamiento cero cae justo aquí, así que se ve el calendario y
+    // debajo la sesión de hoy. Al bajar, el calendario se va y las sesiones se
+    // quedan con todo. Al subir, aparecen los días pasados.
     const centerKey = ValueKey('planAgendaCenter');
     return CustomScrollView(
       center: centerKey,
@@ -416,15 +454,16 @@ class _AnchoredAgenda extends StatelessWidget {
             ),
           ),
         ),
-        SliverPadding(
+        SliverList(
           key: centerKey,
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (_, i) => tile(future[i]),
-              childCount: future.length,
-            ),
-          ),
+          delegate: SliverChildListDelegate([
+            ...cabecera,
+            ...future.map((s) => Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: tile(s),
+                )),
+            const SizedBox(height: 16),
+          ]),
         ),
       ],
     );
