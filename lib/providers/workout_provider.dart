@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/network/api_client.dart';
 import '../core/ble/ble_service.dart';
 import '../core/gps/gps_service.dart';
+import '../core/sensors/cadence_service.dart';
 
 // ── Dashboard State ──────────────────────────────────────────────
 class DashboardState {
@@ -111,6 +112,8 @@ class ActiveSessionState {
   final int     hrCount;
   /// La banda estaba dando datos y ha dejado de hacerlo.
   final bool    hrBandaPerdida;
+  /// Pasos por minuto del contador del móvil. null = sin permiso o sin sensor.
+  final int?    cadenciaSpm;
   // Fase 2 — GPS
   final double    totalDistanceM;
   final bool      gpsActive;
@@ -130,6 +133,7 @@ class ActiveSessionState {
     this.hrSum          = 0,
     this.hrCount        = 0,
     this.hrBandaPerdida = false,
+    this.cadenciaSpm,
     this.totalDistanceM = 0,
     this.gpsActive      = false,
     this.completedTrack,
@@ -151,6 +155,7 @@ class ActiveSessionState {
     int?     hrSum,
     int?     hrCount,
     bool?    hrBandaPerdida,
+    int?     cadenciaSpm,
     double?   totalDistanceM,
     bool?     gpsActive,
     GpsTrack? completedTrack,
@@ -172,6 +177,7 @@ class ActiveSessionState {
         hrSum:          hrSum          ?? this.hrSum,
         hrCount:        hrCount        ?? this.hrCount,
         hrBandaPerdida: hrBandaPerdida ?? this.hrBandaPerdida,
+        cadenciaSpm:    cadenciaSpm    ?? this.cadenciaSpm,
         totalDistanceM: totalDistanceM ?? this.totalDistanceM,
         gpsActive:      gpsActive      ?? this.gpsActive,
         completedTrack: completedTrack ?? this.completedTrack,
@@ -185,6 +191,11 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
   StreamSubscription<int>?      _hrSub;
   StreamSubscription<GpsPoint>? _gpsSub;
+
+  // Cadencia del contador de pasos del móvil. Va aquí y no en el servicio GPS
+  // porque no tiene nada que ver con la posición: es otro sensor.
+  final CadenceService          _cadencia = CadenceService();
+  StreamSubscription<int>?      _cadSub;
 
   ActiveSessionNotifier(this._api, this._ble, this._gps)
       : super(const ActiveSessionState());
@@ -306,6 +317,16 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     _gps.startTracking();
     _gpsSub = _gps.locationStream.listen(_onGpsPoint);
     state = state.copyWith(gpsActive: true);
+
+    // La cadencia se arranca con la sesión, no antes: los pasos de camino al
+    // parque no son cadencia de carrera. Si el atleta niega el permiso o el
+    // móvil no tiene contador de pasos, esto se queda callado y la sesión
+    // sigue igual — sin cadencia, que es mejor que con una inventada.
+    _cadencia.start();
+    _cadSub = _cadencia.cadenceStream.listen((spm) {
+      _gps.setCurrentCadence(spm);
+      state = state.copyWith(cadenciaSpm: spm);
+    });
   }
 
   void _onGpsPoint(GpsPoint point) {
@@ -319,6 +340,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   // Detiene GPS, guarda el track en el estado y lo devuelve para subir al backend
   GpsTrack stopGPS() {
     _gpsSub?.cancel();
+    _cadSub?.cancel();
+    _cadencia.stop();
+    _gps.setCurrentCadence(null);
     final track = _gps.stopTracking();
     state = state.copyWith(gpsActive: false, completedTrack: track);
     return track;
