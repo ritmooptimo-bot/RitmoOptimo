@@ -96,4 +96,62 @@ void main() {
       expect(m[8]!.nombre, 'Competición');
     });
   });
+
+  // Al tocar un día, se ve LO DE ESE DÍA. Antes, tocar la carrera del 29 abría
+  // el listado de las diez competiciones de la temporada.
+  group('carrerasDelDia', () {
+    test('devuelve solo la carrera de ese día, con sus datos', () {
+      final l = carrerasDelDia(_datos, DateTime(2026, 8, 29));
+      expect(l.length, 1);
+      expect(l.first.nombre, 'Carrera nocturna La Barrosa');
+      expect(l.first.esObjetivo, isFalse);   // preparación, y aun así se ve
+      expect(l.first.fecha, '2026-08-29');
+    });
+
+    test('un día sin carrera no devuelve nada', () {
+      expect(carrerasDelDia(_datos, DateTime(2026, 8, 28)), isEmpty);
+      expect(carrerasDelDia(null, DateTime(2026, 8, 29)), isEmpty);
+    });
+
+    test('el 4 de octubre devuelve LAS DOS', () {
+      final l = carrerasDelDia(_datos, DateTime(2026, 10, 4));
+      expect(l.length, 2);
+      expect(l.map((c) => c.nombre).toSet(), {'Milla Verde', 'Cross del Colorado'});
+    });
+
+    test('con varias el mismo día, el objetivo va primero', () {
+      final l = carrerasDelDia({
+        'competitions': [
+          {'name': 'Popular', 'fecha': '2026-10-04', 'role': 'popular'},
+          {'name': 'La importante', 'fecha': '2026-10-04', 'role': 'primario'},
+        ],
+      }, DateTime(2026, 10, 4));
+      expect(l.first.nombre, 'La importante');
+    });
+  });
+
+  group('cuánto falta para la carrera', () {
+    // Se cuenta por DÍAS de calendario, no por horas: una carrera mañana a las
+    // 9:00 vista hoy a las 22:00 tiene que decir "Es mañana", no "Faltan 0 días".
+    String faltaPara(Duration d) {
+      final f = DateTime.now().add(d);
+      final iso = '${f.year}-${f.month.toString().padLeft(2, '0')}-${f.day.toString().padLeft(2, '0')}';
+      return CarreraDelDia('X', false, fecha: iso).cuantoFalta;
+    }
+
+    test('hoy, mañana y dentro de un tiempo', () {
+      expect(faltaPara(Duration.zero), 'ES HOY');
+      expect(faltaPara(const Duration(days: 1)), 'Es mañana');
+      expect(faltaPara(const Duration(days: 23)), 'Faltan 23 días');
+    });
+
+    test('una carrera pasada no dice nada', () {
+      expect(faltaPara(const Duration(days: -5)), '');
+    });
+
+    test('sin fecha legible, tampoco inventa', () {
+      expect(const CarreraDelDia('X', false, fecha: 'mañana').cuantoFalta, '');
+      expect(const CarreraDelDia('X', false).cuantoFalta, '');
+    });
+  });
 }

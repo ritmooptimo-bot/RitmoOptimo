@@ -27,11 +27,66 @@ final competicionesProvider =
   }
 });
 
-/// Una carrera vista desde el calendario: solo lo que hace falta para pintarla.
+/// Una carrera vista desde el calendario.
 class CarreraDelDia {
   final String nombre;
   final bool esObjetivo;
-  const CarreraDelDia(this.nombre, this.esObjetivo);
+  final String fecha;        // YYYY-MM-DD
+  final String? distancia;   // "8" (km)
+  final String? lugar;
+  const CarreraDelDia(this.nombre, this.esObjetivo,
+      {this.fecha = '', this.distancia, this.lugar});
+
+  /// Días que faltan desde hoy. Negativo si ya pasó.
+  int? get diasParaLlegar {
+    try {
+      final f = DateTime.parse(fecha);
+      final h = DateTime.now();
+      return DateTime(f.year, f.month, f.day)
+          .difference(DateTime(h.year, h.month, h.day)).inDays;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// "Faltan 23 días" · "Es mañana" · "ES HOY" · "" si no se puede saber.
+  String get cuantoFalta {
+    final d = diasParaLlegar;
+    if (d == null || d < 0) return '';
+    if (d == 0) return 'ES HOY';
+    if (d == 1) return 'Es mañana';
+    return 'Faltan $d días';
+  }
+}
+
+/// TODAS las competiciones de un día concreto.
+///
+/// Al tocar un día con carrera, lo que quiere ver es ESA carrera y cuánto falta
+/// para ella —sea su objetivo o una de preparación—, no el listado entero de la
+/// temporada. Y si ese día hay dos (4 de octubre), las dos.
+List<CarreraDelDia> carrerasDelDia(Map<String, dynamic>? data, DateTime dia) {
+  final fuera = <CarreraDelDia>[];
+  for (final c in ((data?['competitions'] as List?) ?? const [])) {
+    if (c is! Map) continue;
+    final iso = c['fecha']?.toString() ?? '';
+    DateTime f;
+    try {
+      f = DateTime.parse(iso);
+    } catch (_) {
+      continue;
+    }
+    if (f.year != dia.year || f.month != dia.month || f.day != dia.day) continue;
+    fuera.add(CarreraDelDia(
+      c['name']?.toString() ?? 'Competición',
+      c['role'] == 'primario',
+      fecha: iso.length >= 10 ? iso.substring(0, 10) : iso,
+      distancia: c['distance']?.toString(),
+      lugar: c['location']?.toString(),
+    ));
+  }
+  // El objetivo primero.
+  fuera.sort((a, b) => (b.esObjetivo ? 1 : 0) - (a.esObjetivo ? 1 : 0));
+  return fuera;
 }
 
 /// Carreras de un mes concreto, indexadas por día.
@@ -58,6 +113,9 @@ Map<int, CarreraDelDia> carrerasDelMes(
     final carrera = CarreraDelDia(
       c['name']?.toString() ?? 'Competición',
       c['role'] == 'primario',
+      fecha: iso.length >= 10 ? iso.substring(0, 10) : iso,
+      distancia: c['distance']?.toString(),
+      lugar: c['location']?.toString(),
     );
     // El objetivo nunca lo tapa una popular, llegue en el orden que llegue.
     final previa = fuera[f.day];

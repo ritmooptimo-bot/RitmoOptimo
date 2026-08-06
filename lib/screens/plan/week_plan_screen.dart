@@ -55,6 +55,17 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
     return m.year == now.year && m.month == now.month;
   }
 
+  /// "Viernes, 7 de agosto" — sin depender de los locales del sistema, que en
+  /// este proyecto no siempre están inicializados.
+  static String _fechaLargaDelDia(DateTime mes, int dia) {
+    const dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes',
+                  'Sábado', 'Domingo'];
+    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+                   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    final f = DateTime(mes.year, mes.month, dia);
+    return '${dias[f.weekday - 1]}, $dia de ${meses[f.month - 1]}';
+  }
+
   bool _isTodayDate(Map<String, dynamic> s) {
     final raw = (s['scheduled_date'] ?? s['session_date']) as String? ?? '';
     return raw.length >= 10 && raw.substring(0, 10) == _todayStr();
@@ -281,29 +292,66 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
         onDayTap: (d) =>
             setState(() => _selectedDay = _selectedDay == d ? null : d),
         carreras: carrerasMes,
-        onCarreraTap: () => _abrirCompeticiones(context),
       ),
-      // Botón "Hoy": vuelve a la agenda del día actual (limpia filtro / mes).
+      // Encabezado del día tocado + botón "Hoy".
+      //
+      // Antes solo estaba el botón "Hoy" flotando a la derecha, y al tocar el 7
+      // de agosto no había NADA que dijera qué día se estaba mirando: el único
+      // texto en pantalla ponía "Hoy", que es justo lo que no era. Ahora la
+      // fecha del día tocado va delante, en grande, y el botón queda como lo que
+      // es: la salida para volver.
       if (_selectedDay != null || !isCurrentMonth)
-        Align(
-          alignment: Alignment.centerRight,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 12, top: 2),
-            child: TextButton.icon(
-              onPressed: () {
-                setState(() => _selectedDay = null);
-                if (!isCurrentMonth) {
-                  _calendarLoaded = true;
-                  ref.read(planCalendarProvider.notifier).goToCurrentMonth();
-                }
-              },
-              icon: Icon(Icons.today, size: 16, color: skin.accent),
-              label: Text('Hoy',
-                  style: TextStyle(
-                      color: skin.accent, fontWeight: FontWeight.w600)),
-            ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 2, 12, 2),
+          child: Row(
+            children: [
+              if (_selectedDay != null)
+                Expanded(
+                  child: Text(
+                    _fechaLargaDelDia(state.month, _selectedDay!),
+                    style: TextStyle(
+                      color: skin.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                )
+              else
+                const Spacer(),
+              TextButton.icon(
+                onPressed: () {
+                  setState(() => _selectedDay = null);
+                  if (!isCurrentMonth) {
+                    _calendarLoaded = true;
+                    ref.read(planCalendarProvider.notifier).goToCurrentMonth();
+                  }
+                },
+                icon: Icon(Icons.today, size: 16, color: skin.accent),
+                label: Text('Hoy',
+                    style: TextStyle(
+                        color: skin.accent, fontWeight: FontWeight.w600)),
+              ),
+            ],
           ),
         ),
+
+      // LO QUE HAY ESE DÍA: primero la competición, si la hay.
+      //
+      // Antes, tocar una carrera abría la hoja con LAS DIEZ. Lo que quiere ver
+      // es la de ese día y cuánto falta para ella — sea su objetivo o una de
+      // preparación. El listado completo sigue a un toque, en la tarjeta.
+      if (_selectedDay != null)
+        ...carrerasDelDia(
+          ref.watch(competicionesProvider).valueOrNull,
+          DateTime(state.month.year, state.month.month, _selectedDay!),
+        ).map((c) => Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: _CompeticionDelDia(
+                skin: skin,
+                carrera: c,
+                onTap: () => _abrirCompeticiones(context),
+              ),
+            )),
     ];
 
     // DÍA SELECCIONADO: todo en un solo scroll. El calendario se desliza hacia
@@ -314,12 +362,19 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
         children: [
           ...cabecera,
           ...rejilla,
+          // Si ese día hay carrera, ya se ha pintado arriba: decir "sin sesiones"
+          // a secas sonaría a que no hay nada, cuando hay lo más importante.
           if (filtered.isEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 32),
+              padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
-                child: Text('Sin sesiones este día',
-                    style: TextStyle(color: skin.textMuted, fontSize: 14)),
+                child: Text(
+                  carrerasMes.containsKey(_selectedDay)
+                      ? 'Ese día no hay entreno programado: toca la carrera.'
+                      : 'Sin sesiones este día',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: skin.textMuted, fontSize: 14),
+                ),
               ),
             )
           else
@@ -357,6 +412,83 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
       sessions: state.sessions,
       onTap: _openSession,
       cabecera: [...cabecera, ...rejilla],
+    );
+  }
+}
+
+// ── La competición de ESE día ────────────────────────────────────
+//
+// Se pinta junto a las sesiones del día tocado, con la misma forma que ellas
+// para que se lea como "lo que hay este día". Lleva lo que él necesita saber de
+// un vistazo: qué carrera es, cuánto mide, dónde, cuánto falta y qué papel juega
+// en su plan. Tocarla abre el listado completo, para quien lo quiera.
+class _CompeticionDelDia extends StatelessWidget {
+  final SkinConfig skin;
+  final CarreraDelDia carrera;
+  final VoidCallback onTap;
+  const _CompeticionDelDia(
+      {required this.skin, required this.carrera, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = carrera.esObjetivo ? skin.accent : skin.textSecondary;
+    final detalle = [
+      if ((carrera.distancia ?? '').isNotEmpty) '${carrera.distancia} km',
+      if ((carrera.lugar ?? '').isNotEmpty) carrera.lugar!,
+      if (carrera.cuantoFalta.isNotEmpty) carrera.cuantoFalta,
+    ].join(' · ');
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: skin.backgroundCard,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: color.withValues(alpha: carrera.esObjetivo ? 0.45 : 0.20)),
+        ),
+        child: Row(
+          children: [
+            Icon(carrera.esObjetivo ? Icons.emoji_events : Icons.flag_outlined,
+                color: color, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(carrera.nombre,
+                      style: TextStyle(
+                          color: skin.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                  if (detalle.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(detalle,
+                        style: TextStyle(color: skin.textMuted, fontSize: 12),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                  const SizedBox(height: 3),
+                  Text(
+                    carrera.esObjetivo
+                        ? 'Tu objetivo principal'
+                        : 'Carrera de preparación',
+                    style: TextStyle(
+                        color: color,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: skin.textMuted, size: 20),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -586,7 +718,6 @@ class _PlanCalendarGrid extends StatelessWidget {
   // Sus carreras del mes. El calendario solo sabía de entrenamientos: el día de
   // la carrera se veía igual que un martes cualquiera.
   final Map<int, CarreraDelDia> carreras;
-  final VoidCallback onCarreraTap;
 
   const _PlanCalendarGrid({
     required this.skin,
@@ -595,7 +726,6 @@ class _PlanCalendarGrid extends StatelessWidget {
     required this.selectedDay,
     required this.onDayTap,
     required this.carreras,
-    required this.onCarreraTap,
   });
 
   @override
@@ -667,12 +797,13 @@ class _PlanCalendarGrid extends StatelessWidget {
               final carrera = carreras[day];
 
               return GestureDetector(
-                // Si el día solo tiene carrera (no hay entreno), tocarlo lleva a
-                // "Mis competiciones". Donde hay sesión manda la sesión: el gesto
-                // de siempre no cambia.
-                onTap: sessions.isNotEmpty
+                // Cualquier día con algo —entreno, carrera o ambos— se
+                // selecciona y muestra LO SUYO debajo. Antes, un día con solo
+                // carrera abría el listado de las diez competiciones: para ver
+                // la del 29 de agosto te salían todas.
+                onTap: (sessions.isNotEmpty || carrera != null)
                     ? () => onDayTap(day)
-                    : (carrera != null ? onCarreraTap : null),
+                    : null,
                 child: Container(
                   decoration: BoxDecoration(
                     color: isSelected
