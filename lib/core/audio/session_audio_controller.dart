@@ -79,9 +79,24 @@ class BlockInfo {
   }
 
   String get targetDescription {
-    if (targetPace != null && targetPace!.isNotEmpty) return 'a ritmo $targetPace por kilómetro';
+    if (targetPace != null && targetPace!.isNotEmpty) {
+      // El ritmo objetivo llega del plan como "5:30". Tal cual, el motor de voz
+      // lo lee como una HORA. Se dice en palabras.
+      return 'a ritmo de ${_paceEnPalabras(targetPace!)} por kilómetro';
+    }
     if (zone != null) return 'en zona $zone';
     return '';
+  }
+
+  /// "5:30" → "5 minutos 30 segundos" · "5:00" → "5 minutos justos"
+  static String _paceEnPalabras(String pace) {
+    final p = pace.split(':');
+    if (p.length != 2) return pace;
+    final m = int.tryParse(p[0].trim()), s = int.tryParse(p[1].trim());
+    if (m == null || s == null) return pace;
+    final min = '$m ${m == 1 ? "minuto" : "minutos"}';
+    if (s == 0) return '$min justos';
+    return '$min $s ${s == 1 ? "segundo" : "segundos"}';
   }
 
   static String _buildLabel(String type, String desc) {
@@ -191,6 +206,9 @@ class SessionAudioController {
   // Aviso por kilómetro: "Kilómetro 3. Ritmo 5:42..." (petición del usuario)
   int _lastKmAnnounced   = 0;
   int _lastKmElapsedSec  = 0;
+  // Segundo en que arrancó de verdad (tras la cuenta atrás): la media se mide
+  // desde ahí, no desde que se pulsó "empezar".
+  int _inicioCarreraSec  = 0;
 
   SessionAudioController({
     required AudioCueService audio,
@@ -435,7 +453,7 @@ class SessionAudioController {
     _blockStartElapsed = elapsed;
     _phase             = _Phase.blockActive;
     // El ritmo del km 1 se mide desde que EMPIEZA a correr (no desde la cuenta atrás)
-    if (idx == 0) _lastKmElapsedSec = elapsed;
+    if (idx == 0) { _lastKmElapsedSec = elapsed; _inicioCarreraSec = elapsed; }
 
     final block = blocks[idx];
     final n     = idx + 1;
@@ -576,8 +594,19 @@ class SessionAudioController {
     final paceSec = (elapsed - _lastKmElapsedSec).clamp(60, 3600);
     _lastKmAnnounced  = km;
     _lastKmElapsedSec = elapsed;
+
+    // Media acumulada desde que empezó a correr, como da el Garmin. Se calcula
+    // sobre la distancia REAL recorrida, no sobre los km redondos, para que no
+    // mienta cuando el aviso llega con unos metros de retraso.
+    final segCorriendo = elapsed - _inicioCarreraSec;
+    final kmReales     = distanceM / 1000.0;
+    final media = kmReales > 0.1 ? (segCorriendo / kmReales).round() : null;
+    final frasesMedia = media != null
+        ? ' Media: ${_fmtPace(media.clamp(60, 3600))}.'
+        : '';
+
     await _audio.speak(
-      'Kilómetro $km. Ritmo: ${_fmtPace(paceSec)} el último kilómetro. '
+      'Kilómetro $km. Último kilómetro en ${_fmtPace(paceSec)}.$frasesMedia '
       'Tiempo total: ${_fmtSec(elapsed)}.',
     );
   }
@@ -590,10 +619,23 @@ class SessionAudioController {
     return true;
   }
 
+  // ⚠️ AQUÍ NO SE ESCRIBEN NÚMEROS CON DOS PUNTOS.
+  //
+  // Todo lo de este fichero se LOCUTA. "7:41" el motor de voz lo lee como una
+  // HORA: el atleta oía "ritmo, siete pm" en vez de "siete cuarenta y uno el
+  // kilómetro". Pasaba con el ritmo, con los tiempos de bloque y con el tiempo
+  // total — con todo lo que llevara dos puntos.
+  //
+  // Los números para la PANTALLA van en otro sitio; estos son solo para hablar.
+
+  /// "45 minutos 20 segundos" · "3 minutos" · "40 segundos"
   static String _fmtSec(int totalSec) {
     final m = totalSec ~/ 60;
     final s = totalSec % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
+    if (m == 0) return '$s ${s == 1 ? "segundo" : "segundos"}';
+    final min = '$m ${m == 1 ? "minuto" : "minutos"}';
+    if (s == 0) return min;
+    return '$min $s ${s == 1 ? "segundo" : "segundos"}';
   }
 
   static String _fmtMin(int totalSec) {
@@ -601,10 +643,12 @@ class SessionAudioController {
     return '$m ${m == 1 ? "minuto" : "minutos"}';
   }
 
+  /// "7 minutos 41 segundos" · "7 minutos justos"
   static String _fmtPace(int secPerKm) {
     final m = secPerKm ~/ 60;
     final s = secPerKm % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
+    if (s == 0) return '$m ${m == 1 ? "minuto" : "minutos"} justos';
+    return '$m ${m == 1 ? "minuto" : "minutos"} $s ${s == 1 ? "segundo" : "segundos"}';
   }
 
   static int _paceToSec(String pace) {

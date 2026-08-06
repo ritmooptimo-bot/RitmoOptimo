@@ -37,7 +37,33 @@ const _kMaxSpeedMps = 12.0;   // 43 km/h — imposible andando o corriendo
 // Movimiento mínimo sobre el ancla para que cuente como distancia recorrida.
 // Por debajo es temblor del GPS estando parado. No se pierde nada: mientras no
 // se supere, el ancla no se mueve y el trayecto se sigue acumulando.
-const _kMinMoveM = 3.0;
+//
+// ⚠️ ESTABA EN 3 m Y NO FILTRABA NADA. Con el GPS entregando una lectura por
+// segundo y el atleta a 2,2 m/s, en dos lecturas ya se superaban los 3 m: el
+// umbral solo actuaba estando parado. Lo que se colaba era el ZIGZAG del ruido,
+// y como la distancia se suma en valor absoluto, el ruido SIEMPRE suma. Nunca
+// resta. Sesión real del 06/08: 5.901 m nuestros contra 5.681 m del Fenix 7
+// (+3,9 %), y de ahí el desfase de los kilómetros cantados por el audio.
+//
+// Calibrado volviendo a pasar los 685 puntos guardados de esa sesión por este
+// mismo algoritmo con distintos valores:
+//     3 m (lo anterior) → 5.839 m   +2,8 %
+//     5 m               → 5.810 m   +2,3 %
+//     8 m  + los filtros de abajo → 5.735 m   +1,0 %
+//    10 m  + los filtros de abajo → 5.682 m   +0,0 %  ← Garmin: 5.681 m
+//
+// A cambio, andando muy despacio hace falta ~10 s para registrar avance. Es un
+// intercambio deliberado: preferimos perder unos metros a inventarlos.
+const _kMinMoveM = 10.0;
+
+// Para SUMAR DISTANCIA se exige mejor precisión que para dibujar el recorrido.
+// Una lectura de 40 m de error sirve para saber por qué calle vas, no para
+// medir cuánto has avanzado.
+const _kMaxAccuracyDistM = 15.0;
+
+// Cuánto vale una lectura de FC antes de considerarla muerta. La banda emite
+// ~1/s; 10 s sin nada significa que se ha caído, no que el corazón se pare.
+const _kHrValidezMax = Duration(seconds: 10);
 
 // FIX 2: Intervalo de actualización forzada cada 10 s aunque no haya movimiento.
 //         Evita quedarse sin puntos en tramos lentos o paradas breves.
@@ -168,6 +194,7 @@ class GpsService {
   DateTime? _startTime;
   DateTime? _lastPointTime;
   int? _currentHR;
+  DateTime? _hrRecibidaEn;
   int? _currentCadence;
   int? _currentPowerW;
   String _sportType = 'running';
@@ -186,7 +213,34 @@ class GpsService {
   }
 
   // Actualizados por el workout provider / BLE service cuando llegan datos
-  void setCurrentHR(int? hr)       => _currentHR       = hr;
+  //
+  // ⚠️ LA FC CADUCA. Antes no: se guardaba la última lectura y se sellaba en
+  // TODOS los puntos siguientes para siempre. Sesión del 06/08: la banda dejó
+  // de emitir en el minuto 5:30 y los 613 puntos siguientes —40 minutos— se
+  // guardaron con el mismo 126, un número inventado. La media salió de los
+  // primeros cinco minutos y la máxima real (155 según el Garmin) se perdió.
+  // Eso envenena TRIMP, zonas, eficiencia y desacople.
+  //
+  // Ahora, sin lectura fresca el punto va SIN FC. Un hueco es un dato honesto;
+  // un número repetido 613 veces, no.
+  void setCurrentHR(int? hr) {
+    _currentHR = hr;
+    _hrRecibidaEn = hr == null ? null : DateTime.now();
+  }
+
+  /// FC válida solo si la lectura es reciente. null = la banda no está dando datos.
+  int? get _hrVigente {
+    if (_currentHR == null || _hrRecibidaEn == null) return null;
+    return DateTime.now().difference(_hrRecibidaEn!) <= _kHrValidezMax
+        ? _currentHR
+        : null;
+  }
+
+  /// true cuando había banda y ha dejado de emitir (para avisar en pantalla).
+  bool get hrPerdida =>
+      _currentHR != null && _hrRecibidaEn != null &&
+      DateTime.now().difference(_hrRecibidaEn!) > _kHrValidezMax;
+
   void setCurrentCadence(int? cad) => _currentCadence  = cad;
   void setCurrentPower(int? watts)  => _currentPowerW   = watts;
   void setSportType(String sport)   => _sportType       = sport;
@@ -367,12 +421,21 @@ class GpsService {
     // se supere no se suma, pero tampoco se pierde: el ancla no se mueve y el
     // trayecto se acumula hasta confirmarse. El umbral crece con el error de la
     // lectura, porque con ±50 m de incertidumbre un "salto" de 10 m es ruido.
-    if (_distAnchor != null) {
+    // Con la lectura floja NO se MIDE, pero el punto sí se guarda: el recorrido
+    // se sigue dibujando (si no, el trazado quedaba con huecos). El ancla se
+    // queda donde está y el avance se confirma con la siguiente lectura buena.
+    final sirveParaMedir = pos.accuracy <= _kMaxAccuracyDistM;
+
+    if (!sirveParaMedir) {
+      // no se toca ni la distancia ni el ancla
+    } else if (_distAnchor != null) {
       const dist = Distance();
       final dd = dist.as(LengthUnit.Meter,
         LatLng(_distAnchor!.latitude, _distAnchor!.longitude),
         LatLng(pos.latitude, pos.longitude));
-      final ruido  = pos.accuracy * 0.5;
+      // El umbral sube con el error de la lectura: con ±8 m de incertidumbre,
+      // un "avance" de 10 m sigue siendo ruido.
+      final ruido  = pos.accuracy * 2.0;
       final umbral = ruido > _kMinMoveM ? ruido : _kMinMoveM;
       if (dd >= umbral) {
         _totalDistanceM += dd;
@@ -418,14 +481,14 @@ class GpsService {
       speedMps:  pos.speed < 0 ? 0 : pos.speed,
       accuracy:  pos.accuracy,
       timestamp: pos.timestamp.toIso8601String(),
-      hr:        _currentHR,
+      hr:        _hrVigente,   // null si la banda lleva >10 s callada
       cadence:   _currentCadence,
       powerW:    _currentPowerW,
     );
     _points.add(point);
     _guardados++;
     print('GPSDIAG PUNTO GUARDADO #$_guardados  total=${_points.length} puntos, '
-          '${_totalDistanceM.toStringAsFixed(1)}m  hr=${_currentHR ?? "-"}');
+          '${_totalDistanceM.toStringAsFixed(1)}m  hr=${_hrVigente ?? "SIN BANDA"}');
     _pointController.add(point);
   }
 

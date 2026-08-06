@@ -97,13 +97,23 @@ void main() {
     expect(todo, contains('Sesión completada'),
         reason: 'La sesión terminó sin decir nada');
 
-    // 4. Aviso por kilómetro con el ritmo (km 1 y km 2)
+    // 4. Aviso por kilómetro con el ritmo y la media
     expect(todo, contains('Kilómetro 1'), reason: 'No avisó del km 1');
     expect(todo, contains('Kilómetro 2'), reason: 'No avisó del km 2');
-    expect(todo, contains('Ritmo:'),      reason: 'No dijo el ritmo del km');
-    // Y el ritmo anunciado tiene que parecerse al real (3,33 m/s ≈ 5:00/km)
+    expect(todo, contains('Media:'),      reason: 'No dio la media acumulada');
+
+    // 5. Ningún NÚMERO locutado puede llevar dos puntos entre dígitos: el motor
+    //    de voz lo lee como una hora ("7:41" → "siete pm"). Los dos puntos tras
+    //    una palabra ("Duración:") son una pausa y no molestan.
+    final comoHora = RegExp(r'\d\s*:\s*\d');
+    for (final frase in espia.dicho) {
+      expect(comoHora.hasMatch(frase), isFalse,
+          reason: 'Sonará como una hora en vez de como un ritmo: "$frase"');
+    }
+
+    // 6. Y el ritmo dicho tiene que cuadrar con la velocidad simulada (5:00/km)
     final km1 = espia.dicho.firstWhere((f) => f.contains('Kilómetro 1'));
-    expect(RegExp(r'Ritmo: (\d):(\d\d)').firstMatch(km1)?.group(1), '5',
+    expect(km1, contains('5 minutos'),
         reason: 'El ritmo anunciado no cuadra con la velocidad simulada: $km1');
   });
 }

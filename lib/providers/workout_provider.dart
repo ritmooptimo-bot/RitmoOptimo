@@ -109,6 +109,8 @@ class ActiveSessionState {
   final int?    hrMax;
   final int     hrSum;
   final int     hrCount;
+  /// La banda estaba dando datos y ha dejado de hacerlo.
+  final bool    hrBandaPerdida;
   // Fase 2 — GPS
   final double    totalDistanceM;
   final bool      gpsActive;
@@ -127,6 +129,7 @@ class ActiveSessionState {
     this.hrMax,
     this.hrSum          = 0,
     this.hrCount        = 0,
+    this.hrBandaPerdida = false,
     this.totalDistanceM = 0,
     this.gpsActive      = false,
     this.completedTrack,
@@ -147,16 +150,20 @@ class ActiveSessionState {
     int?     hrMax,
     int?     hrSum,
     int?     hrCount,
+    bool?    hrBandaPerdida,
     double?   totalDistanceM,
     bool?     gpsActive,
     GpsTrack? completedTrack,
+    // Los `?? this.x` de abajo hacen IMPOSIBLE poner un campo a null. Para
+    // apagar la FC cuando se cae la banda hace falta pedirlo explícitamente.
+    bool      borrarHR = false,
   }) =>
       ActiveSessionState(
         session:        session        ?? this.session,
         isRunning:      isRunning      ?? this.isRunning,
         startedAt:      startedAt      ?? this.startedAt,
         elapsedSeconds: elapsedSeconds ?? this.elapsedSeconds,
-        currentHR:      currentHR      ?? this.currentHR,
+        currentHR:      borrarHR ? null : (currentHR ?? this.currentHR),
         currentPace:    currentPace    ?? this.currentPace,
         bleDeviceName:  bleDeviceName  ?? this.bleDeviceName,
         bleConnected:   bleConnected   ?? this.bleConnected,
@@ -164,6 +171,7 @@ class ActiveSessionState {
         hrMax:          hrMax          ?? this.hrMax,
         hrSum:          hrSum          ?? this.hrSum,
         hrCount:        hrCount        ?? this.hrCount,
+        hrBandaPerdida: hrBandaPerdida ?? this.hrBandaPerdida,
         totalDistanceM: totalDistanceM ?? this.totalDistanceM,
         gpsActive:      gpsActive      ?? this.gpsActive,
         completedTrack: completedTrack ?? this.completedTrack,
@@ -221,6 +229,14 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   void tickSecond() {
     if (state.startedAt == null) return;
     final real = DateTime.now().difference(state.startedAt!).inSeconds;
+
+    // Si la banda lleva más de 10 s callada, la pantalla deja de enseñar el
+    // último número: mostrar 126 fijo durante 40 minutos hace creer al atleta
+    // que está midiendo cuando no mide nada. Mejor "--" y un aviso.
+    if (_gps.hrPerdida && state.currentHR != null) {
+      state = state.copyWith(elapsedSeconds: real, borrarHR: true, hrBandaPerdida: true);
+      return;
+    }
     state = state.copyWith(elapsedSeconds: real);
   }
 
@@ -255,6 +271,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     if (bpm < 30 || bpm > 220) return;
 
     _gps.setCurrentHR(bpm);
+
+    // Vuelve a haber señal: se apaga el aviso de banda perdida.
+    if (state.hrBandaPerdida) state = state.copyWith(hrBandaPerdida: false);
 
     // La media y el máximo SOLO cuentan con la sesión en marcha.
     //
