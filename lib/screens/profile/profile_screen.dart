@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/skin_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../config/skins/skin_config.dart';
 
 // ── Profile Screen ───────────────────────────────────────────────
 // Perfil del atleta + selector de skin + configuración.
@@ -33,30 +34,31 @@ class ProfileScreen extends ConsumerWidget {
               color: skin.textMuted, fontSize: 12, fontWeight: FontWeight.w600)),
           const SizedBox(height: 12),
 
-          _SkinOption(
-            title: 'Modo Oscuro',
-            subtitle: 'Azul eléctrico · Diseño profesional',
-            skinId: 'dark',
-            isSelected: skinState.skin.name == 'Dark Mode',
-            skin: skin,
-            onTap: () => ref.read(skinProvider.notifier).setSkin('dark'),
-          ),
-          _SkinOption(
-            title: 'Modo Día',
-            subtitle: 'Azul profesional · Uso al aire libre',
-            skinId: 'light',
-            isSelected: skinState.skin.name == 'Light Mode',
-            skin: skin,
-            onTap: () => ref.read(skinProvider.notifier).setSkin('light'),
-          ),
-          _SkinOption(
-            title: 'F1 Cockpit',
-            subtitle: 'Rojo Ferrari · Telemetría · Datos en monospace',
-            skinId: 'f1',
-            isSelected: skinState.skin.name == 'F1 Cockpit',
-            skin: skin,
-            onTap: () => ref.read(skinProvider.notifier).setSkin('f1'),
-          ),
+          // ⚠️ ESTA LISTA SE CONSTRUYE SOLA. NO AÑADAS PIELES A MANO AQUÍ.
+          //
+          // Antes había un bloque escrito a mano por piel, con su título y su
+          // descripción metidos en esta pantalla. Eso obligaba a entrar aquí cada
+          // vez que se creaba una piel nueva — y las pieles las hace otra sesión,
+          // que no tiene por qué tocar pantallas.
+          //
+          // Ahora una piel nueva es SOLO su fichero en `config/skins/` más su
+          // línea en `availableSkins`. El nombre visible y la descripción viajan
+          // dentro de la propia piel (`etiqueta` y `descripcion`), que es su
+          // sitio: quien elige los colores elige cómo se llaman.
+          //
+          // El orden es el del mapa: Dart conserva el de inserción.
+          ...availableSkins.entries.map((entrada) => _SkinOption(
+                title: entrada.value.etiqueta.isNotEmpty
+                    ? entrada.value.etiqueta
+                    : entrada.value.name,
+                subtitle: entrada.value.descripcion,
+                // `name` es único e interno; comparar por él evita depender de
+                // que el estado guarde también la clave del mapa.
+                isSelected: skinState.skin.name == entrada.value.name,
+                skin: skin,
+                onTap: () =>
+                    ref.read(skinProvider.notifier).setSkin(entrada.key),
+              )),
 
           const SizedBox(height: 32),
 
@@ -86,13 +88,14 @@ class ProfileScreen extends ConsumerWidget {
 class _SkinOption extends StatelessWidget {
   final String title;
   final String subtitle;
-  final String skinId;
   final bool isSelected;
-  final dynamic skin;
+  final SkinConfig skin;
   final VoidCallback onTap;
 
+  // `skinId` estaba declarado y era obligatorio, pero no se usaba en ninguna
+  // parte del widget: se pasaba tres veces para nada. Fuera.
   const _SkinOption({
-    required this.title, required this.subtitle, required this.skinId,
+    required this.title, required this.subtitle,
     required this.isSelected, required this.skin, required this.onTap,
   });
 
@@ -124,10 +127,15 @@ class _SkinOption extends StatelessWidget {
                       style: TextStyle(
                           color: skin.textPrimary,
                           fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text(subtitle,
-                      style: TextStyle(
-                          color: skin.textMuted, fontSize: 12)),
+                  // Sin descripción no se pinta la línea. Una piel de fuera que
+                  // no la rellene deja un hueco en blanco dentro de la tarjeta,
+                  // y parece que falta algo en vez de que sobre.
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        style: TextStyle(
+                            color: skin.textMuted, fontSize: 12)),
+                  ],
                 ],
               ),
             ),

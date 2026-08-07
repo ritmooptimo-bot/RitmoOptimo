@@ -6,6 +6,8 @@ import 'skin_config.dart';
 const darkSkin = SkinConfig(
   id: SkinId.darkLight,
   name: 'Dark Mode',
+  etiqueta: 'Modo Oscuro',
+  descripcion: 'Azul eléctrico · Diseño profesional',
 
   background:          Color(0xFF0A0A0F),
   backgroundSecondary: Color(0xFF111118),
@@ -41,6 +43,8 @@ const darkSkin = SkinConfig(
 const lightSkin = SkinConfig(
   id: SkinId.darkLight,
   name: 'Light Mode',
+  etiqueta: 'Modo Día',
+  descripcion: 'Azul profesional · Uso al aire libre',
 
   background:          Color(0xFFF5F5F8),
   backgroundSecondary: Color(0xFFFFFFFF),

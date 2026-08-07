@@ -6,6 +6,8 @@ import 'skin_config.dart';
 const f1Skin = SkinConfig(
   id: SkinId.f1,
   name: 'F1 Cockpit',
+  etiqueta: 'F1 Cockpit',
+  descripcion: 'Rojo Ferrari · Telemetría · Datos en monospace',
 
   background:          Color(0xFF050507),
   backgroundSecondary: Color(0xFF0D0D10),

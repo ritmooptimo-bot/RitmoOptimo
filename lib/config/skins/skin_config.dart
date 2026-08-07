@@ -1,10 +1,27 @@
 import 'package:flutter/material.dart';
 
-enum SkinId { darkLight, f1 }
+/// Solo sirve para UNA cosa: saber si la piel tiene gemela de día y de noche,
+/// que es lo que mira `toggleDarkLight()`. No es un catálogo de pieles.
+///
+/// `personalizada` es para las que vienen de fuera: el interruptor día/noche las
+/// ignora, que es lo correcto, y así **una piel nueva no obliga a tocar nada
+/// más** — ni este enum crece, ni hay que entrar en ninguna pantalla.
+enum SkinId { darkLight, f1, personalizada }
 
 class SkinConfig {
   final SkinId id;
+
+  /// Identificador interno, en inglés y ÚNICO ('Dark Mode', 'F1 Cockpit'…).
+  /// Es con lo que se compara cuál está puesta: no lo traduzcas.
   final String name;
+
+  /// Lo que lee el deportista en Ajustes. Si se deja vacío se usa `name`, para
+  /// que una piel de fuera compile sin tener que rellenarlo.
+  final String etiqueta;
+
+  /// La línea de debajo en Ajustes ("Rojo Ferrari · Telemetría…"). Vacía = no se
+  /// pinta esa línea.
+  final String descripcion;
 
   // ── Backgrounds ─────────────────────────────────────────────
   final Color background;
@@ -45,6 +62,8 @@ class SkinConfig {
   const SkinConfig({
     required this.id,
     required this.name,
+    this.etiqueta = '',
+    this.descripcion = '',
     required this.background,
     required this.backgroundSecondary,
     required this.backgroundCard,
