@@ -94,10 +94,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
 
               // ── MODO PRUEBA ──────────────────────────────
-              // Visible a proposito: el deportista tiene que saber que esta
+              // Visible a propósito: el deportista tiene que saber que está
               // ayudando a probar la app y que puede encontrarse cosas a medias.
               // Cuando la app salga de piloto se pone kModoPrueba en false y
               // desaparece de todas partes.
+              //
+              // ⚠️ Este texto lo lee TODO el que entra en el piloto, y es de las
+              // primeras cosas que ve. Iba sin tildes ("estas ayudando",
+              // "cuentanoslo"): pedirle a alguien que te avise si ve algo raro,
+              // con dos faltas en la misma frase, no invita mucho a fiarse.
               if (kModoPrueba)
                 SliverToBoxAdapter(
                   child: Container(
@@ -113,7 +118,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'MODO PRUEBA · estas ayudando a probar la app. Si ves algo raro, cuentanoslo.',
+                          'MODO PRUEBA · estás ayudando a probar la app. Si ves algo raro, cuéntanoslo.',
                           style: TextStyle(color: skin.accent, fontSize: 11, fontWeight: FontWeight.w600, height: 1.3),
                         ),
                       ),
