@@ -41,6 +41,13 @@ final _summaryProvider = FutureProvider.family<_SummaryData, String>((ref, id) a
   int?    fastestKmPace;
   int?    cadenceAvg;
   String? sportType;
+  // CÓMO FUE CADA BLOQUE. Lo guarda la app al terminar (actual_structure).
+  // "para que el deportista sepa cómo ha realizado el bloque concreto" — David.
+  List<Map<String, dynamic>> bloques = [];
+  final rawBloques = session['actual_structure'];
+  if (rawBloques is List) {
+    bloques = rawBloques.whereType<Map>().map((b) => Map<String, dynamic>.from(b)).toList();
+  }
 
   if (gpsRaw != null) {
     distKm    = _pd(gpsRaw['total_distance_km']);
@@ -64,16 +71,25 @@ final _summaryProvider = FutureProvider.family<_SummaryData, String>((ref, id) a
       );
     }).where((s) => s.paceSec > 0).toList();
 
-    // HR zones from server (seconds per zone)
+    // ZONAS DE FC — las del entrenador si vienen, si no las genéricas.
+    //
+    // El servidor manda ahora las seis de Raúl (R0…R3+), calculadas por FC de
+    // RESERVA. Las z1-z5 siguen llegando porque las salidas guardadas antes del
+    // 07/08 solo tienen esas: si mirásemos únicamente las nuevas, el resumen de
+    // una sesión antigua saldría con todas las barras a cero.
     final rawZones = gpsRaw['hr_zones_sec'] as Map?;
     if (rawZones != null && rawZones.isNotEmpty) {
-      serverHrZones = {
-        'Z1': _pi(rawZones['z1']) ?? 0,
-        'Z2': _pi(rawZones['z2']) ?? 0,
-        'Z3': _pi(rawZones['z3']) ?? 0,
-        'Z4': _pi(rawZones['z4']) ?? 0,
-        'Z5': _pi(rawZones['z5']) ?? 0,
-      };
+      const rKeys = ['R0', 'R1', 'R1+', 'R2', 'R3', 'R3+'];
+      final tieneR = rKeys.any((k) => (_pi(rawZones[k]) ?? 0) > 0);
+      serverHrZones = tieneR
+          ? { for (final k in rKeys) k: _pi(rawZones[k]) ?? 0 }
+          : {
+              'Z1': _pi(rawZones['z1']) ?? 0,
+              'Z2': _pi(rawZones['z2']) ?? 0,
+              'Z3': _pi(rawZones['z3']) ?? 0,
+              'Z4': _pi(rawZones['z4']) ?? 0,
+              'Z5': _pi(rawZones['z5']) ?? 0,
+            };
     }
 
     // GPS points for map
@@ -107,6 +123,7 @@ final _summaryProvider = FutureProvider.family<_SummaryData, String>((ref, id) a
     fastestKmPace: fastestKmPace,
     cadenceAvg:    cadenceAvg,
     sportType:     sportType,
+    bloques:       bloques,
   );
 });
 
@@ -132,6 +149,7 @@ class _SummaryData {
   final int?                 fastestKmPace;
   final int?                 cadenceAvg;
   final String?              sportType;
+  final List<Map<String, dynamic>> bloques;
 
   const _SummaryData({
     required this.session,
@@ -146,6 +164,7 @@ class _SummaryData {
     this.fastestKmPace,
     this.cadenceAvg,
     this.sportType,
+    this.bloques = const [],
   });
 }
 
@@ -343,6 +362,17 @@ class _SummaryBody extends StatelessWidget {
           SliverToBoxAdapter(child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             child: _SplitsTable(skin: skin, splits: data.paceSplits, fmtPace: _fmtPace),
+          )),
+        ],
+
+        // ── Cómo fue cada bloque ──────────────────────────────
+        // Pedido por David: cada bloque con SUS kilómetros y su ritmo, además
+        // del total de la sesión. Solo aparece si la sesión la guió la app.
+        if (data.bloques.isNotEmpty) ...[
+          SliverToBoxAdapter(child: _SectionHeader('POR BLOQUES', skin)),
+          SliverToBoxAdapter(child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+            child: _TablaBloques(skin: skin, bloques: data.bloques, fmtPace: _fmtPace),
           )),
         ],
 
@@ -1246,4 +1276,99 @@ class _SectionHeader extends StatelessWidget {
         color: skin.textMuted, fontSize: 10,
         letterSpacing: 2, fontWeight: FontWeight.w600)),
   );
+}
+
+
+// ── Tabla "por bloques" ───────────────────────────────────────────
+//
+// Cada fila es un bloque con lo que dio: tiempo real frente al previsto,
+// kilómetros, ritmo y pulso. Los bloques sin distancia (fuerza, movilidad) no
+// muestran km ni ritmo en vez de enseñar un cero, que se leería como un fallo.
+class _TablaBloques extends StatelessWidget {
+  final SkinConfig skin;
+  final List<Map<String, dynamic>> bloques;
+  final String Function(int) fmtPace;
+  const _TablaBloques({required this.skin, required this.bloques, required this.fmtPace});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: skin.backgroundCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: skin.border),
+      ),
+      child: Column(
+        children: List.generate(bloques.length, (i) {
+          final b       = bloques[i];
+          final nombre  = (b['block'] ?? 'Bloque \${i + 1}').toString();
+          final zona    = b['zone']?.toString();
+          final min     = _pi(b['min']);
+          final prev    = _pi(b['min_previstos']);
+          final metros  = _pi(b['distance_m']) ?? 0;
+          final ritmo   = _pi(b['pace_sec_km']);
+          final fc      = _pi(b['hr_avg']);
+
+          final detalle = <String>[
+            if (min != null) '\$min min\${prev != null && prev != min ? " (de \$prev)" : ""}',
+            if (metros >= 100) '\${(metros / 1000).toStringAsFixed(2)} km',
+            if (ritmo != null) '\${fmtPace(ritmo)}/km',
+            if (fc != null) '\$fc ppm',
+          ].join(' · ');
+
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              border: i == 0 ? null : Border(top: BorderSide(color: skin.border)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 26, height: 26,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: skin.accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text('\${i + 1}', style: TextStyle(
+                      color: skin.accent, fontSize: 12, fontWeight: FontWeight.w700)),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Flexible(child: Text(nombre,
+                            style: TextStyle(color: skin.textPrimary, fontSize: 13,
+                                fontWeight: FontWeight.w600),
+                            maxLines: 1, overflow: TextOverflow.ellipsis)),
+                        if (zona != null && zona.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: skin.textMuted.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(zona, style: TextStyle(
+                                color: skin.textMuted, fontSize: 10,
+                                fontWeight: FontWeight.w700)),
+                          ),
+                        ],
+                      ]),
+                      if (detalle.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(detalle, style: TextStyle(color: skin.textMuted, fontSize: 12)),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
 }

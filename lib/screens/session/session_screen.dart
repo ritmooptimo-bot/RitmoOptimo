@@ -106,7 +106,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       if (_audioController != null) {
         final elapsed = ref.read(activeSessionProvider).elapsedSeconds;
         final distM   = ref.read(gpsServiceProvider).totalDistanceM.round();
-        _audioController!.onTick(elapsed, distanceM: distM);
+        // La FC va también: cada bloque guarda su pulso medio y máximo.
+        final hr      = ref.read(activeSessionProvider).currentHR;
+        _audioController!.onTick(elapsed, distanceM: distM, hr: hr);
       }
     });
   }
@@ -301,6 +303,15 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
           .catchError((e) { debugPrint('[GPS] Error upload: $e'); return <String, dynamic>{}; });
     }
 
+
+    // CÓMO FUE CADA BLOQUE. El endpoint y la columna existían desde hace
+    // tiempo; lo que faltaba era que alguien los llamara — postActualStructure
+    // estaba escrito en el cliente y no lo invocaba nadie.
+    final bloques = _audioController?.resultadosDeBloques ?? const [];
+    if (bloques.isNotEmpty) {
+      api.postActualStructure(widget.sessionId, bloques.map((b) => b.toJson()).toList())
+          .catchError((e) { debugPrint('[BLOQUES] no se pudo guardar: $e'); return <String, dynamic>{}; });
+    }
     if (session.bleConnected) await notifier.disconnectBLE();
 
     if (mounted) {

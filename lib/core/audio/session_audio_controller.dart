@@ -1,4 +1,5 @@
 import 'audio_cue_service.dart';
+import 'medidor_bloques.dart';
 import '../utils/zona_fc.dart';
 
 // Tipos de bloque que se interpretan como intervalos/series
@@ -12,6 +13,9 @@ class BlockInfo {
   final String type;
   final int    durationSeconds; // 0 = solo avance manual
   final int?   zone;
+  /// La zona TAL CUAL viene del plan ("R1+", "z2"). `zone` es solo su número,
+  /// y con la escala del entrenador (R0…R3+) un número no la representa.
+  final String? zoneLabel;
   final String? targetPace;    // "4:30" formato mm:ss
   final String? description;
   final bool   isInterval;
@@ -26,6 +30,7 @@ class BlockInfo {
     required this.type,
     required this.durationSeconds,
     this.zone,
+    this.zoneLabel,
     this.targetPace,
     this.description,
     this.isInterval       = false,
@@ -69,6 +74,7 @@ class BlockInfo {
       type:               typeRaw,
       durationSeconds:    durMin > 0 ? (durMin * 60).round() : 0,
       zone:               zonaFcNumero(zoneRaw),
+      zoneLabel:          zoneRaw?.toString(),
       targetPace:         paceRaw?.toString(),
       description:        desc.isNotEmpty ? desc : null,
       isInterval:         isInt,
@@ -211,6 +217,17 @@ class SessionAudioController {
   // desde ahí, no desde que se pulsó "empezar".
   int _inicioCarreraSec  = 0;
 
+  // ── MEDIDAS POR BLOQUE ────────────────────────────────────────────────
+  // Cada bloque lleva su propia cuenta de kilómetros, ritmo y pulso, y arranca
+  // de cero aunque la sesión lleve ya media hora encima. Pedido por David:
+  // "para que el deportista sepa cómo ha realizado el bloque concreto".
+  MedidorBloque? _medidor;
+  final List<ResultadoBloque> _resultados = [];
+  int _ultimaDistanciaM = 0;
+
+  /// Lo que ha dado cada bloque. La pantalla lo envía al terminar la sesión.
+  List<ResultadoBloque> get resultadosDeBloques => List.unmodifiable(_resultados);
+
   SessionAudioController({
     required AudioCueService audio,
     required List<dynamic>   rawBlocks,
@@ -229,7 +246,12 @@ class SessionAudioController {
   }
 
   /// Llamar cada segundo desde el timer existente. Fire-and-forget.
-  void onTick(int elapsed, {int distanceM = 0}) {
+  void onTick(int elapsed, {int distanceM = 0, int? hr}) {
+    // El medidor se alimenta SIEMPRE, aunque el controlador esté ocupado
+    // hablando: si se saltara los ticks de los cues, el bloque perdería metros.
+    _ultimaDistanciaM = distanceM;
+    _medidor?.anota(elapsedSeg: elapsed, metrosTotales: distanceM, fc: hr);
+
     if (_busy) return;
     _doTick(elapsed, distanceM: distanceM);
   }
@@ -453,6 +475,17 @@ class SessionAudioController {
     _blockIdx          = idx;
     _blockStartElapsed = elapsed;
     _phase             = _Phase.blockActive;
+
+    // Empieza a medir ESTE bloque: de aquí en adelante sus kilómetros y su
+    // ritmo se cuentan desde cero, aunque la sesión lleve ya varios km.
+    _medidor = MedidorBloque(
+      indice:            idx,
+      etiqueta:          blocks[idx].label,
+      zona:              blocks[idx].zoneLabel,
+      elapsedSeg:        elapsed,
+      metrosTotales:     _ultimaDistanciaM,
+      segundosPrevistos: blocks[idx].durationSeconds,
+    );
     // El ritmo del km 1 se mide desde que EMPIEZA a correr (no desde la cuenta atrás)
     if (idx == 0) { _lastKmElapsedSec = elapsed; _inicioCarreraSec = elapsed; }
 
@@ -488,6 +521,12 @@ class SessionAudioController {
     final blockElapsed = elapsed - _blockStartElapsed;
     await _audio.beepLong();
 
+    // Se cierran las medidas de ESTE bloque antes de hablar: lo que se cuenta
+    // es lo que se guarda, no dos cifras calculadas por caminos distintos.
+    final resultado = _medidor?.cerrar();
+    if (resultado != null) _resultados.add(resultado);
+    _medidor = null;
+
     if (blocks[_blockIdx].isInterval && _repResults.isNotEmpty) {
       final block    = blocks[_blockIdx];
       final avgPace  = _avgRepPace();
@@ -505,6 +544,16 @@ class SessionAudioController {
         }
       }
       await _audio.speak(summary);
+    } else if (resultado != null) {
+      // El resumen del bloque con SUS números: kilómetros, ritmo, pulso y si
+      // estuvo dentro de lo que pedía el entrenador. Antes solo decía el tiempo.
+      final objetivo = blocks[_blockIdx].targetPace;
+      await _audio.speak(veredictoBloque(
+        resultado,
+        ritmoObjetivoSegKm: (objetivo != null && objetivo.isNotEmpty)
+            ? _paceToSec(objetivo)
+            : null,
+      ));
     } else {
       await _audio.speak(
         'Bloque ${_blockIdx + 1} completado. Tiempo: ${_fmtSec(blockElapsed)}.',
