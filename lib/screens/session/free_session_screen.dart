@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../config/skins/skin_config.dart';
 import '../../providers/skin_provider.dart';
 import '../../providers/workout_provider.dart';
 import '../../core/network/api_client.dart';
@@ -98,76 +99,44 @@ class _FreeSessionScreenState extends ConsumerState<FreeSessionScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-              child: Text(
-                '¿Qué vas a hacer hoy?',
-                style: TextStyle(
-                  color: skin.textPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(
-                'Este entreno cuenta como tuyo y lo verá tu entrenador, '
-                'pero no sustituye a la sesión del plan.',
-                style: TextStyle(color: skin.textMuted, fontSize: 13, height: 1.4),
-              ),
-            ),
-            const SizedBox(height: 20),
+            // El título y la explicación van DENTRO del scroll, no encima de él.
+            //
+            // Antes eran hijos fijos del Column: con la letra del sistema al
+            // 180 %, el párrafo ocupaba cuatro renglones y, junto al título, se
+            // quedaba con un tercio de la pantalla PARA SIEMPRE. A los seis
+            // deportes les sobraban tres huecos y medio, y había que adivinar
+            // que la lista seguía. Ahora se deslizan al bajar.
+            //
+            // Solo el botón se queda quieto, porque es la acción de la pantalla.
             Expanded(
               child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: Sport.especialidades.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (_, i) {
-                  final s = Sport.especialidades[i];
-                  final sel = _elegido == s;
-                  return InkWell(
-                    onTap: _creando ? null : () => setState(() => _elegido = s),
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-                      decoration: BoxDecoration(
-                        color: sel ? skin.accent.withValues(alpha: 0.14) : skin.backgroundCard,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: sel ? skin.accent : skin.border,
-                          width: sel ? 2 : 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(s.icon, color: sel ? skin.accent : skin.textMuted, size: 26),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  s.label,
-                                  style: TextStyle(
-                                    color: skin.textPrimary,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _queSeMide(s),
-                                  style: TextStyle(color: skin.textMuted, fontSize: 12),
-                                ),
-                              ],
-                            ),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                itemCount: Sport.especialidades.length + 1,
+                separatorBuilder: (_, i) => SizedBox(height: i == 0 ? 20 : 10),
+                itemBuilder: (_, idx) {
+                  if (idx == 0) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '¿Qué vas a hacer hoy?',
+                          style: TextStyle(
+                            color: skin.textPrimary,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
                           ),
-                          if (sel) Icon(Icons.check_circle, color: skin.accent, size: 22),
-                        ],
-                      ),
-                    ),
-                  );
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Este entreno cuenta como tuyo y lo verá tu entrenador, '
+                          'pero no sustituye a la sesión del plan.',
+                          style: TextStyle(color: skin.textMuted, fontSize: 13, height: 1.4),
+                        ),
+                      ],
+                    );
+                  }
+                  final i = idx - 1;
+                  return _tarjetaDeporte(i, skin);
                 },
               ),
             ),
@@ -180,16 +149,22 @@ class _FreeSessionScreenState extends ConsumerState<FreeSessionScreen> {
                   textAlign: TextAlign.center,
                 ),
               ),
+            // Una línea que separa el botón de la lista. Sin ella, la última
+            // tarjeta se cortaba a ras del botón y parecía un fallo de dibujo.
+            Divider(height: 1, thickness: 1, color: skin.border),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
               child: SizedBox(
                 width: double.infinity,
-                height: 54,
+                // Alto MÍNIMO, no fijo: con la letra grande, 54 px recortaban el
+                // texto del botón.
                 child: ElevatedButton(
                   onPressed: _elegido == null || _creando ? null : _empezar,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: skin.accent,
                     disabledBackgroundColor: skin.border,
+                    minimumSize: const Size.fromHeight(54),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -200,17 +175,66 @@ class _FreeSessionScreenState extends ConsumerState<FreeSessionScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
                         )
                       : Text(
-                          'EMPEZAR',
+                          'Empezar',
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: skin.background,
-                            fontSize: 15,
+                            fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            letterSpacing: 1.5,
                           ),
                         ),
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Una opción de deporte. Sale del `itemBuilder` para que la cabecera pueda
+  /// viajar como primer elemento de la misma lista.
+  Widget _tarjetaDeporte(int i, SkinConfig skin) {
+    final s   = Sport.especialidades[i];
+    final sel = _elegido == s;
+    return InkWell(
+      onTap: _creando ? null : () => setState(() => _elegido = s),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        decoration: BoxDecoration(
+          color: sel ? skin.accent.withValues(alpha: 0.14) : skin.backgroundCard,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: sel ? skin.accent : skin.border,
+            width: sel ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(s.icon, color: sel ? skin.accent : skin.textMuted, size: 26),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.label,
+                    style: TextStyle(
+                      color: skin.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _queSeMide(s),
+                    style: TextStyle(color: skin.textMuted, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            if (sel) Icon(Icons.check_circle, color: skin.accent, size: 22),
           ],
         ),
       ),
