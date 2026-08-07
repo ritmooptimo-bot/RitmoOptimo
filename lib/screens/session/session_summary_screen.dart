@@ -349,8 +349,8 @@ class _SummaryBody extends StatelessWidget {
         if (hasSplits) ...[
           SliverToBoxAdapter(child: _SectionHeader(
               _sport.speedMode == SpeedMode.speedKmh
-                  ? 'VELOCIDAD POR KILÓMETRO'
-                  : 'RITMO POR KILÓMETRO', skin)),
+                  ? 'Velocidad por kilómetro'
+                  : 'Ritmo por kilómetro', skin, icon: Icons.show_chart)),
           SliverToBoxAdapter(child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _PaceChart(
@@ -369,7 +369,7 @@ class _SummaryBody extends StatelessWidget {
         // Pedido por David: cada bloque con SUS kilómetros y su ritmo, además
         // del total de la sesión. Solo aparece si la sesión la guió la app.
         if (data.bloques.isNotEmpty) ...[
-          SliverToBoxAdapter(child: _SectionHeader('POR BLOQUES', skin)),
+          SliverToBoxAdapter(child: _SectionHeader('Por bloques', skin, icon: Icons.view_agenda_outlined)),
           SliverToBoxAdapter(child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
             child: _TablaBloques(skin: skin, bloques: data.bloques, fmtPace: _fmtPace),
@@ -378,7 +378,7 @@ class _SummaryBody extends StatelessWidget {
 
         // ── Mapa de ruta ──────────────────────────────────────
         if (hasGPS) ...[
-          SliverToBoxAdapter(child: _SectionHeader('RECORRIDO', skin)),
+          SliverToBoxAdapter(child: _SectionHeader('Recorrido', skin, icon: Icons.map_outlined)),
           SliverToBoxAdapter(child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: RouteMapWidget(points: data.gpsPoints, maxHR: _hrMax > 0 ? _hrMax : null),
@@ -399,7 +399,7 @@ class _SummaryBody extends StatelessWidget {
 
         // ── Distribución de zonas FC ──────────────────────────
         if (zones.isNotEmpty && _durMin > 0) ...[
-          SliverToBoxAdapter(child: _SectionHeader('ZONAS DE FRECUENCIA CARDÍACA', skin)),
+          SliverToBoxAdapter(child: _SectionHeader('Zonas de frecuencia cardíaca', skin, icon: Icons.monitor_heart_outlined)),
           SliverToBoxAdapter(child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _ZoneDistribution(skin: skin, zonesSec: zones, totalSec: _durMin * 60),
@@ -408,7 +408,7 @@ class _SummaryBody extends StatelessWidget {
 
         // ── Plan vs Real ──────────────────────────────────────
         if (_planMin > 0) ...[
-          SliverToBoxAdapter(child: _SectionHeader('PLAN VS REALIDAD', skin)),
+          SliverToBoxAdapter(child: _SectionHeader('Plan vs realidad', skin, icon: Icons.compare_arrows)),
           SliverToBoxAdapter(child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _PlanVsReal(
@@ -423,7 +423,7 @@ class _SummaryBody extends StatelessWidget {
 
         // ── Carga + carga del entrenamiento ──────────────────
         if (data.trainingLoad != null && data.trainingLoad! > 0) ...[
-          SliverToBoxAdapter(child: _SectionHeader('CARGA DEL ENTRENAMIENTO', skin)),
+          SliverToBoxAdapter(child: _SectionHeader('Carga del entrenamiento', skin, icon: Icons.battery_charging_full_outlined)),
           SliverToBoxAdapter(child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _TrainingLoadCard(skin: skin, trimp: data.trainingLoad!),
@@ -432,7 +432,7 @@ class _SummaryBody extends StatelessWidget {
 
         // ── RPE y sensaciones ─────────────────────────────────
         if (_rpe > 0 || energy != null) ...[
-          SliverToBoxAdapter(child: _SectionHeader('CÓMO TE SENTISTE', skin)),
+          SliverToBoxAdapter(child: _SectionHeader('Cómo te sentiste', skin, icon: Icons.mood_outlined)),
           SliverToBoxAdapter(child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: _FeelingsCard(skin: skin, rpe: _rpe, energy: energy, notes: notes),
@@ -449,13 +449,20 @@ class _SummaryBody extends StatelessWidget {
         SliverToBoxAdapter(child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
           child: Column(children: [
+            // Alto MÍNIMO, no fijo: con la letra del sistema grande, 52 px
+            // recortaban el texto del botón por arriba y por abajo.
             SizedBox(
-              width: double.infinity, height: 52,
+              width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () => context.go('/'),
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                ),
                 icon: const Icon(Icons.home_outlined),
-                label: const Text('VOLVER AL INICIO',
-                    style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+                label: const Text('Volver al inicio', maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               ),
             ),
             const SizedBox(height: 12),
@@ -485,24 +492,48 @@ class _HeroBanner extends StatelessWidget {
       required this.type, required this.dateStr, required this.timeStr,
       this.sport, this.missed = false});
 
-  static const _typeIcons = {
-    'recuperacion': '🟩', 'base': '🟦', 'umbral': '🟧', 'vo2max': '🔴',
-    'neuromuscular': '⬛', 'largo': '🟫', 'fuerza': '⚫', 'hiit': '🩷',
-    'competicion': '🏆', 'fartlek': '🌊', 'progresion': '📈',
+  // ⚠️ Antes esto eran EMOJIS DE CUADRADOS DE COLORES (🟩🟦🟧⬛🟫) delante del
+  // título. En pantalla, un rodaje de base salía como un cuadrado azul junto a
+  // "Rodaje aeróbico": parecía un icono roto, no un tipo de sesión. Ahora cada
+  // tipo tiene su nombre y su icono, y van en una etiqueta bajo el título.
+  static const _tipoNombre = {
+    'recuperacion': 'Recuperación', 'base': 'Base aeróbica',
+    'umbral': 'Umbral', 'vo2max': 'VO₂ máx', 'neuromuscular': 'Neuromuscular',
+    'largo': 'Tirada larga', 'fuerza': 'Fuerza', 'hiit': 'Series HIIT',
+    'competicion': 'Competición', 'fartlek': 'Fartlek', 'progresion': 'Progresivo',
   };
-  static const _sportIcons = {
-    'running': '🏃', 'cycling': '🚴', 'trail': '⛰️',
-    'swimming': '🏊', 'triathlon': '🏅', 'rowing': '🚣', 'gym': '🏋️',
+  static const _tipoIcono = {
+    'recuperacion': Icons.self_improvement, 'base': Icons.terrain_outlined,
+    'umbral': Icons.speed_outlined, 'vo2max': Icons.whatshot_outlined,
+    'neuromuscular': Icons.bolt_outlined, 'largo': Icons.timeline,
+    'fuerza': Icons.fitness_center, 'hiit': Icons.flash_on_outlined,
+    'competicion': Icons.emoji_events_outlined, 'fartlek': Icons.waves_outlined,
+    'progresion': Icons.trending_up,
+  };
+  static const _sportNombre = {
+    'running': 'Carrera', 'cycling': 'Ciclismo', 'trail': 'Trail',
+    'swimming': 'Natación', 'triathlon': 'Triatlón', 'rowing': 'Remo', 'gym': 'Gimnasio',
+  };
+  static const _sportIcono = {
+    'running': Icons.directions_run, 'cycling': Icons.directions_bike,
+    'trail': Icons.terrain, 'swimming': Icons.pool, 'triathlon': Icons.emoji_events,
+    'rowing': Icons.rowing, 'gym': Icons.fitness_center,
   };
 
   @override
   Widget build(BuildContext context) => Container(
     width: double.infinity,
     decoration: BoxDecoration(
+      // Los `stops` no estaban y el degradado empezaba a aclararse desde arriba.
+      // Todo el texto va en blanco: si el fondo ya se ha ido al color de la piel
+      // —que en la piel clara es casi blanco— el título desaparece. Ahora el
+      // verde aguanta hasta el 82 % y solo funde en el último tramo, ya vacío.
       gradient: LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
+        stops: const [0.0, 0.93, 1.0],
         colors: [
+          missed ? const Color(0xFF4E342E) : const Color(0xFF16521A),
           missed ? const Color(0xFF5D4037) : const Color(0xFF1B5E20),
           skin.background,
         ],
@@ -535,27 +566,90 @@ class _HeroBanner extends StatelessWidget {
             child: Icon(missed ? Icons.event_busy : Icons.check,
                 color: Colors.white, size: 40),
           ),
-          const SizedBox(height: 12),
-          Text(missed ? 'SESIÓN NO REALIZADA' : 'SESIÓN COMPLETADA',
-              style: TextStyle(
-                  color: missed ? const Color(0xFFBCAAA4) : const Color(0xFF81C784),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700, letterSpacing: 3)),
-          const SizedBox(height: 8),
-          Text(
-            '${_typeIcons[type] ?? _sportIcons[sport ?? ''] ?? '🏃'} $title',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white,
-                fontSize: 20, fontWeight: FontWeight.w700),
+          const SizedBox(height: 14),
+          // ⚠️ ESTE RÓTULO ERA VERDE CLARO (#81C784) SOBRE VERDE OSCURO (#1B5E20).
+          //
+          // Con 11 px, tracking de 3 y ese contraste, "SESIÓN COMPLETADA" casi no
+          // se leía — se fundía con el fondo. Ahora va en una píldora clara sobre
+          // el verde: el contraste deja de depender del punto exacto del degradado
+          // donde caiga el texto.
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+            ),
+            child: Text(missed ? 'NO REALIZADA' : 'COMPLETADA',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800, letterSpacing: 1.6)),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white,
+                fontSize: 20, fontWeight: FontWeight.w800, height: 1.2),
+          ),
+          const SizedBox(height: 10),
+          // Tipo de sesión y deporte, cada uno con su icono. Wrap para que a
+          // letra grande el segundo baje de línea en vez de desbordar.
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8, runSpacing: 8,
+            children: [
+              if (_tipoNombre[type] != null)
+                _HeroTag(icon: _tipoIcono[type] ?? Icons.fitness_center,
+                    text: _tipoNombre[type]!),
+              if (_sportNombre[sport ?? ''] != null)
+                _HeroTag(icon: _sportIcono[sport] ?? Icons.directions_run,
+                    text: _sportNombre[sport]!),
+            ],
+          ),
+          const SizedBox(height: 10),
           Text(
             '$dateStr${timeStr.isNotEmpty ? ' · $timeStr' : ''}',
-            style: const TextStyle(color: Colors.white60, fontSize: 13),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            // Era white60 y sobre el degradado quedaba ilegible. El blanco al 85 %
+            // se lee tanto en la parte oscura como donde ya está desvaneciendo.
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.88), fontSize: 13),
           ),
         ]),
       ),
     ),
+  );
+}
+
+/// Etiqueta del hero: icono + texto, en blanco translúcido sobre el verde.
+class _HeroTag extends StatelessWidget {
+  final IconData icon;
+  final String   text;
+  const _HeroTag({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 15, color: Colors.white.withValues(alpha: 0.9)),
+      const SizedBox(width: 6),
+      Text(text, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Colors.white, fontSize: 12,
+              fontWeight: FontWeight.w600)),
+    ]),
   );
 }
 
@@ -579,41 +673,57 @@ class _MetricsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Etiquetas en Capital y NÚMERO SEPARADO DE LA UNIDAD. Ver _MetricCard: con la
+    // letra del sistema al 180 % (la que usa David), "10.14km" se partía en dos
+    // renglones y "DURACIÓN" perdía la Ñ final.
     final items = [
       _MetricItem(icon: Icons.timer_outlined,     color: skin.accent,
-          label: 'DURACIÓN',  value: durMin > 0 ? '${durMin}min' : '--'),
+          label: 'Duración',  value: durMin > 0 ? '$durMin' : '--', unit: durMin > 0 ? 'min' : ''),
       // Nadando se cuentan metros (1.500 m), no "1,50 km"
       _MetricItem(icon: Icons.straighten,          color: const Color(0xFF42A5F5),
-          label: 'DISTANCIA',
+          label: 'Distancia',
           value: distKm > 0
               ? (sport == Sport.natacion
-                  ? '${(distKm * 1000).round()}m'
-                  : '${distKm.toStringAsFixed(2)}km')
-              : '--'),
+                  ? '${(distKm * 1000).round()}'
+                  : distKm.toStringAsFixed(2).replaceAll('.', ','))
+              : '--',
+          unit: distKm > 0 ? (sport == Sport.natacion ? 'm' : 'km') : ''),
       _MetricItem(icon: Icons.favorite_outline,    color: const Color(0xFFEF5350),
-          label: 'FC MEDIA',  value: hrAvg > 0 ? '${hrAvg}bpm' : '--'),
+          label: 'FC media',  value: hrAvg > 0 ? '$hrAvg' : '--', unit: hrAvg > 0 ? 'ppm' : ''),
       _MetricItem(icon: Icons.arrow_upward,        color: const Color(0xFFF44336),
-          label: 'FC MÁX',   value: hrMax > 0 ? '${hrMax}bpm' : '--'),
+          label: 'FC máx',    value: hrMax > 0 ? '$hrMax' : '--', unit: hrMax > 0 ? 'ppm' : ''),
       _MetricItem(icon: Icons.speed_outlined,      color: const Color(0xFF26C6DA),
-          label: sport.speedLabel.isEmpty ? 'RITMO' : sport.speedLabel,
-          value: pace == '--' ? '--' : '$pace ${sport.speedUnit}'.trim()),
+          label: sport.speedLabel.isEmpty ? 'Ritmo' : _capitalizar(sport.speedLabel),
+          value: pace == '--' ? '--' : pace,
+          unit: pace == '--' ? '' : sport.speedUnit.trim()),
       _MetricItem(icon: Icons.local_fire_department_outlined, color: const Color(0xFFFF9800),
-          label: 'CALORÍAS',  value: estCal > 0 ? '~${estCal}kcal' : '--'),
+          label: 'Calorías',  value: estCal > 0 ? '~$estCal' : '--', unit: estCal > 0 ? 'kcal' : ''),
       if (elevGainM != null && elevGainM! > 0)
         _MetricItem(icon: Icons.trending_up,       color: const Color(0xFF66BB6A),
-            label: 'DESNIVEL+', value: '+${elevGainM!.round()}m'),
+            label: 'Desnivel', value: '+${elevGainM!.round()}', unit: 'm'),
       if (cadenceAvg != null && cadenceAvg! > 0)
         _MetricItem(icon: Icons.directions_run,    color: const Color(0xFFAB47BC),
-            label: 'CADENCIA',  value: '${cadenceAvg}rpm'),
+            label: 'Cadencia',  value: '$cadenceAvg', unit: 'ppm'),
     ];
+
+    // COLUMNAS SEGÚN EL TAMAÑO DE LETRA DEL SISTEMA.
+    //
+    // Tres columnas en un móvil son ~105 px por celda. Con la letra al 180 % no
+    // cabe ni "Duración". En vez de recortar la accesibilidad, se le da más ancho
+    // a cada tarjeta: dos columnas cuando la letra es grande.
+    final escala  = MediaQuery.textScalerOf(context).scale(14) / 14;
+    final columnas = escala >= 1.3 ? 2 : 3;
+    // Y la celda crece a lo alto con la letra, para que el número no se ahogue.
+    final alto = columnas == 2 ? 2.6 : 1.45;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       child: GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3, childAspectRatio: 1.1,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columnas,
+          childAspectRatio: alto / (escala.clamp(1.0, 1.8)),
           crossAxisSpacing: 10, mainAxisSpacing: 10,
         ),
         itemCount: items.length,
@@ -623,14 +733,41 @@ class _MetricsGrid extends StatelessWidget {
   }
 }
 
+/// "RITMO MEDIO" → "Ritmo medio". Las etiquetas en MAYÚSCULAS ocupan más y se
+/// leen peor; el dato ya destaca por tamaño, no hace falta gritar.
+String _capitalizar(String s) {
+  final t = s.trim().toLowerCase();
+  return t.isEmpty ? t : '${t[0].toUpperCase()}${t.substring(1)}';
+}
+
 class _MetricItem {
   final IconData icon;
   final Color    color;
-  final String   label, value;
+  final String   label;
+  /// El número, SIN la unidad: "61", "10,14", "144".
+  final String   value;
+  /// La unidad, aparte: "min", "km", "bpm". Ver _MetricCard para el porqué.
+  final String   unit;
   const _MetricItem({required this.icon, required this.color,
-      required this.label, required this.value});
+      required this.label, required this.value, this.unit = ''});
 }
 
+/// Una métrica de la sesión.
+///
+/// ⚠️ POR QUÉ ESTÁ ASÍ (08/08/2026)
+///
+/// David tiene la letra del sistema **al 180 %** —cosa nada rara a los 52 años— y
+/// esta tarjeta se rompía entera: "DURACIÓN" salía como "DURACIÓ / N", "10.14km"
+/// como "10.14k / m" y "CALORÍAS" como "CALORÍA / S". El texto no tenía ni
+/// maxLines, ni ellipsis, ni forma de encoger: simplemente se partía.
+///
+/// Tres decisiones para que aguante:
+///
+///  1. **El número y la unidad van separados.** "10,14" grande y "km" pequeño
+///     debajo. Antes competían por el mismo renglón y ganaba el corte.
+///  2. **FittedBox en el número**: si no cabe, se encoge en vez de partirse.
+///  3. **La etiqueta en Capital, no en MAYÚSCULAS con tracking.** "Duración" ocupa
+///     un 25 % menos que "D U R A C I Ó N" y se lee mejor de un vistazo.
 class _MetricCard extends StatelessWidget {
   final SkinConfig skin;
   final _MetricItem item;
@@ -638,21 +775,55 @@ class _MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
     decoration: BoxDecoration(
       color: skin.backgroundCard,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: item.color.withValues(alpha: 0.2)),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: item.color.withValues(alpha: 0.22)),
     ),
-    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Icon(item.icon, color: item.color, size: 22),
-      const SizedBox(height: 6),
-      Text(item.value, style: TextStyle(color: skin.textPrimary,
-          fontSize: 16, fontWeight: FontWeight.w700)),
-      const SizedBox(height: 2),
-      Text(item.label, style: TextStyle(
-          color: skin.textMuted, fontSize: 9, letterSpacing: 1)),
-    ]),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(item.icon, color: item.color, size: 16),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(item.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: skin.textMuted, fontSize: 11,
+                    fontWeight: FontWeight.w600, height: 1.1)),
+          ),
+        ]),
+        const SizedBox(height: 7),
+        // El número manda: se le da todo el ancho y se encoge antes que partirse.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(item.value,
+                    maxLines: 1,
+                    style: TextStyle(color: skin.textPrimary,
+                        fontSize: 21, fontWeight: FontWeight.w700, height: 1)),
+              ),
+            ),
+            if (item.unit.isNotEmpty) ...[
+              const SizedBox(width: 3),
+              Text(item.unit,
+                  maxLines: 1,
+                  style: TextStyle(color: skin.textMuted,
+                      fontSize: 12, fontWeight: FontWeight.w600)),
+            ],
+          ],
+        ),
+      ],
+    ),
   );
 }
 
@@ -709,8 +880,15 @@ class _PaceChart extends StatelessWidget {
       );
     }).toList();
 
+    // Un gráfico es un dibujo, no un texto corrido: si sus rótulos crecen al
+    // 180 % como el resto de la app, "8'15\"" se parte en dos renglones y las
+    // barras se quedan sin sitio. Se limita el aumento a un 15 % y se le da más
+    // alto al recuadro para compensar.
+    const escalaEje = TextScaler.linear(1.15);
+    final escala = MediaQuery.textScalerOf(context).scale(14) / 14;
+
     return Container(
-      height: 180,
+      height: 180 + (escala.clamp(1.0, 1.8) - 1.0) * 40,
       padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
       decoration: BoxDecoration(
         color: skin.backgroundCard,
@@ -731,22 +909,26 @@ class _PaceChart extends StatelessWidget {
           titlesData: FlTitlesData(
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
-                showTitles: true, reservedSize: 42,
+                showTitles: true, reservedSize: 48,
                 interval: 60,
                 getTitlesWidget: (v, _) => Text(
                   _fmtPace(v),
-                  style: TextStyle(color: skin.textMuted, fontSize: 9),
+                  textScaler: escalaEje,
+                  maxLines: 1, softWrap: false,
+                  style: TextStyle(color: skin.textMuted, fontSize: 10),
                 ),
               ),
             ),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
-                showTitles: true, reservedSize: 20,
+                showTitles: true, reservedSize: 24,
                 getTitlesWidget: (v, _) {
                   final idx = v.round();
                   if (idx < 0 || idx >= splits.length) return const SizedBox.shrink();
                   return Text('K${splits[idx].km}',
-                    style: TextStyle(color: skin.textMuted, fontSize: 9));
+                    textScaler: escalaEje,
+                    maxLines: 1, softWrap: false,
+                    style: TextStyle(color: skin.textMuted, fontSize: 10));
                 },
               ),
             ),
@@ -759,7 +941,7 @@ class _PaceChart extends StatelessWidget {
               getTooltipItem: (group, _, rod, __) {
                 final s = splits[group.x];
                 final pace = _fmtPace(rod.toY);
-                final hr   = s.hrAvg > 0 ? '\n♥ ${s.hrAvg}bpm' : '';
+                final hr   = s.hrAvg > 0 ? '\n♥ ${s.hrAvg} ppm' : '';
                 return BarTooltipItem(
                   'K${s.km} · $pace$hr',
                   TextStyle(color: skin.textPrimary, fontSize: 11,
@@ -797,46 +979,48 @@ class _SplitsTable extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
           child: Row(children: [
-            _SplitCell('KM',     flex: 1, color: skin.textMuted, header: true),
-            _SplitCell('RITMO',  flex: 3, color: skin.textMuted, header: true),
-            _SplitCell('FC',     flex: 2, color: skin.textMuted, header: true, alignRight: true),
+            _SplitCell('Km',     flex: 2, color: skin.textMuted, header: true),
+            _SplitCell('Ritmo',  flex: 5, color: skin.textMuted, header: true, alignRight: true),
+            _SplitCell('Pulso',  flex: 4, color: skin.textMuted, header: true, alignRight: true),
           ]),
         ),
         Divider(color: skin.border, height: 1),
         // Filas
+        //
+        // Las tres columnas van en Expanded con recorte: la etiqueta "BEST"
+        // empujaba el pulso fuera de la pantalla y el mejor kilómetro salía
+        // "144bp". Ahora el mejor se marca con una estrella, que ocupa un tercio
+        // y se entiende igual.
         ...splits.map((s) {
           final isBest = s.km == best;
           return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 9, 16, 9),
             child: Row(children: [
-              _SplitCell('${s.km}',        flex: 1, color: skin.textMuted),
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              _SplitCell('${s.km}', flex: 2, color: skin.textMuted),
+              Expanded(flex: 5, child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Text(fmtPace(s.paceSec),
+                  if (isBest) ...[
+                    const Icon(Icons.star_rounded,
+                        size: 17, color: Color(0xFF4CAF50)),
+                    const SizedBox(width: 4),
+                  ],
+                  Flexible(child: Text(fmtPace(s.paceSec),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
                     style: TextStyle(
                       color: isBest ? const Color(0xFF4CAF50) : skin.textPrimary,
                       fontSize: 14, fontWeight: FontWeight.w700,
-                    )),
-                  if (isBest) ...[
-                    const SizedBox(width: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4CAF50).withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text('BEST', style: TextStyle(
-                          color: Color(0xFF4CAF50), fontSize: 9, fontWeight: FontWeight.w800)),
-                    ),
-                  ],
-                  const Spacer(),
-                  Text(
-                    s.hrAvg > 0 ? '${s.hrAvg}bpm' : '--',
-                    style: TextStyle(color: skin.textSecondary, fontSize: 12),
-                  ),
+                    ))),
                 ],
-              ).expand(),
+              )),
+              const SizedBox(width: 6),
+              Expanded(flex: 4, child: Text(
+                s.hrAvg > 0 ? '${s.hrAvg} ppm' : '--',
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: TextStyle(color: skin.textSecondary, fontSize: 13),
+              )),
             ]),
           );
         }),
@@ -844,10 +1028,6 @@ class _SplitsTable extends StatelessWidget {
       ]),
     );
   }
-}
-
-extension on Widget {
-  Widget expand() => Expanded(child: this);
 }
 
 class _SplitCell extends StatelessWidget {
@@ -864,11 +1044,11 @@ class _SplitCell extends StatelessWidget {
     flex: flex,
     child: Text(text,
       textAlign: alignRight ? TextAlign.right : TextAlign.left,
+      maxLines: 1, overflow: TextOverflow.ellipsis,
       style: TextStyle(
         color: color,
-        fontSize: header ? 9 : 13,
-        fontWeight: header ? FontWeight.w600 : FontWeight.w400,
-        letterSpacing: header ? 1 : 0,
+        fontSize: header ? 11 : 13,
+        fontWeight: header ? FontWeight.w600 : FontWeight.w500,
       ),
     ),
   );
@@ -888,19 +1068,20 @@ class _ElevationChips extends StatelessWidget {
     spacing: 8, runSpacing: 8,
     children: [
       if (gainM > 0) _Chip(
-        label: '+${gainM.round()}m',
+        label: '+${gainM.round()} m',
         icon: Icons.trending_up,
         color: const Color(0xFF66BB6A),
         skin: skin,
       ),
       if (lossM > 0) _Chip(
-        label: '-${lossM.round()}m',
+        label: '−${lossM.round()} m',
         icon: Icons.trending_down,
         color: const Color(0xFFEF5350),
         skin: skin,
       ),
+      // El rayo sobraba: el chip ya lleva su icono.
       if (fastestKm != null) _Chip(
-        label: '⚡ Mejor km $fastestKm',
+        label: 'Mejor km $fastestKm',
         icon: Icons.flash_on,
         color: const Color(0xFFFFD54F),
         skin: skin,
@@ -926,10 +1107,10 @@ class _Chip extends StatelessWidget {
       border: Border.all(color: color.withValues(alpha: 0.3)),
     ),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, color: color, size: 14),
-      const SizedBox(width: 4),
-      Text(label, style: TextStyle(
-          color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+      Icon(icon, color: color, size: 15),
+      const SizedBox(width: 5),
+      Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700))),
     ]),
   );
 }
@@ -946,6 +1127,12 @@ class _ZoneDistribution extends StatelessWidget {
     'Z1': Color(0xFF81C784), 'Z2': Color(0xFF4CAF50),
     'Z3': Color(0xFFFFEB3B), 'Z4': Color(0xFFFF9800), 'Z5': Color(0xFFF44336),
   };
+  // Las SEIS del entrenador. Del verde de recuperación al rojo del máximo,
+  // en el mismo orden de intensidad que las genéricas.
+  static const _rColors = {
+    'R0': Color(0xFF81C784), 'R1': Color(0xFF4CAF50), 'R1+': Color(0xFFA3E635),
+    'R2': Color(0xFFFFEB3B), 'R3': Color(0xFFFF9800), 'R3+': Color(0xFFF44336),
+  };
   static const _zLabels = {
     'Z1': 'Recuperación  <60%',
     'Z2': 'Base aeróbica  60–70%',
@@ -953,6 +1140,22 @@ class _ZoneDistribution extends StatelessWidget {
     'Z4': 'Umbral láctico  80–90%',
     'Z5': 'VO₂max / Máx  >90%',
   };
+  // ⚠️ Las de arriba son la escala GENÉRICA por % de FC máxima, que es la que
+  // tienen las salidas guardadas antes del 07/08. Su entrenador no trabaja así:
+  // usa seis zonas propias sobre umbrales ventilatorios. Con la escala vieja, un
+  // rodaje aeróbico a 144 ppm aparecía como "40 minutos en umbral láctico".
+  static const _rLabels = {
+    'R0': 'Recuperación activa',
+    'R1': 'Aeróbico extensivo',
+    'R1+': 'Aeróbico intensivo (VT1)',
+    'R2': 'Entre VT1 y VT2',
+    'R3': 'En torno a VT2',
+    'R3+': 'Máxima',
+  };
+
+  bool get _sonDelEntrenador => zonesSec.keys.any((k) => _rLabels.containsKey(k));
+  Color _colorDe(String k) => (_sonDelEntrenador ? _rColors[k] : _zColors[k]) ?? Colors.grey;
+  String? _etiquetaDe(String k) => _sonDelEntrenador ? _rLabels[k] : _zLabels[k];
 
   @override
   Widget build(BuildContext context) {
@@ -973,7 +1176,7 @@ class _ZoneDistribution extends StatelessWidget {
             child: Row(
               children: active.map((e) => Expanded(
                 flex: e.value,
-                child: Container(color: _zColors[e.key] ?? Colors.grey),
+                child: Container(color: _colorDe(e.key)),
               )).toList(),
             ),
           ),
@@ -985,41 +1188,47 @@ class _ZoneDistribution extends StatelessWidget {
           if (sec <= 0) return const SizedBox.shrink();
           final min  = (sec / 60).round();
           final pct  = (sec / total * 100).round();
-          final clr  = _zColors[e.key] ?? Colors.grey;
+          final clr  = _colorDe(e.key);
+          // Sobre el color de la zona, el texto en blanco o en negro según lo
+          // clara que sea: la R2 es amarilla y en blanco no se leería.
+          final sobre = clr.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
           return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(children: [
-              Container(width: 10, height: 10,
-                  decoration: BoxDecoration(color: clr, shape: BoxShape.circle)),
-              const SizedBox(width: 8),
-              Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(e.key, style: TextStyle(color: skin.textPrimary,
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // La clave y el tiempo arriba; la descripción, en su propia línea.
+                // Todo en una sola fila no cabía con la letra del sistema grande.
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: clr, borderRadius: BorderRadius.circular(20)),
+                    child: Text(e.key, maxLines: 1, style: TextStyle(
+                        color: sobre, fontSize: 11, fontWeight: FontWeight.w900)),
+                  ),
+                  const Spacer(),
+                  Text('$min min · $pct %', maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: skin.textPrimary,
                           fontSize: 12, fontWeight: FontWeight.w700)),
-                      Text('${min}min · $pct%', style: TextStyle(
-                          color: skin.textMuted, fontSize: 11)),
-                    ],
+                ]),
+                const SizedBox(height: 4),
+                Text(_etiquetaDe(e.key) ?? '', maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: skin.textMuted, fontSize: 12)),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: sec / total,
+                    backgroundColor: skin.border,
+                    valueColor: AlwaysStoppedAnimation(clr),
+                    minHeight: 6,
                   ),
-                  const SizedBox(height: 2),
-                  Text(_zLabels[e.key] ?? '', style: TextStyle(
-                      color: skin.textMuted, fontSize: 10)),
-                  const SizedBox(height: 4),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: LinearProgressIndicator(
-                      value: sec / total,
-                      backgroundColor: skin.border,
-                      valueColor: AlwaysStoppedAnimation(clr),
-                      minHeight: 4,
-                    ),
-                  ),
-                ],
-              )),
-            ]),
+                ),
+              ],
+            ),
           );
         }),
       ]),
@@ -1051,13 +1260,15 @@ class _PlanVsReal extends StatelessWidget {
         color: skin.backgroundCard, borderRadius: BorderRadius.circular(12)),
       child: Column(children: [
         _CompareRow(skin: skin, label: 'Duración',
-            plan: '${planMin}min', real: realMin > 0 ? '${realMin}min' : '--',
+            plan: '$planMin min', real: realMin > 0 ? '$realMin min' : '--',
             pct: durPct, color: _badge(durPct)),
         if (planDistM > 0) ...[
           Divider(color: skin.border, height: 20),
           _CompareRow(skin: skin, label: 'Distancia',
-              plan: '${(planDistM / 1000).toStringAsFixed(1)}km',
-              real: realDistM > 0 ? '${(realDistM / 1000).toStringAsFixed(2)}km' : '--',
+              plan: '${(planDistM / 1000).toStringAsFixed(1).replaceAll('.', ',')} km',
+              real: realDistM > 0
+                  ? '${(realDistM / 1000).toStringAsFixed(2).replaceAll('.', ',')} km'
+                  : '--',
               pct: distPct, color: _badge(distPct)),
         ],
       ]),
@@ -1073,28 +1284,44 @@ class _CompareRow extends StatelessWidget {
   const _CompareRow({required this.skin, required this.label,
       required this.plan, required this.real, required this.pct, required this.color});
 
+  // Antes iba todo en una sola fila: etiqueta, previsto, flecha, real y el
+  // porcentaje. Con la letra grande no cabía y "Duración" se partía por la mitad.
+  // Ahora la etiqueta y el porcentaje van arriba, y la comparación debajo con
+  // sitio de sobra.
   @override
-  Widget build(BuildContext context) => Row(children: [
-    Expanded(child: Text(label, style: TextStyle(color: skin.textMuted, fontSize: 12))),
-    Text(plan, overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: skin.textMuted, fontSize: 13)),
-    const SizedBox(width: 8),
-    Icon(Icons.arrow_forward, color: skin.textMuted, size: 14),
-    const SizedBox(width: 8),
-    Text(real, overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: skin.textPrimary,
-        fontSize: 13, fontWeight: FontWeight.w700)),
-    const SizedBox(width: 8),
-    if (pct > 0) Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(children: [
+        Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: skin.textMuted, fontSize: 12,
+                fontWeight: FontWeight.w600))),
+        if (pct > 0) Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Text('$pct %', maxLines: 1,
+              style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800)),
+        ),
+      ]),
+      const SizedBox(height: 5),
+      // Wrap para que, si la letra es enorme, el resultado baje de línea en vez
+      // de comerse la unidad.
+      Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8, runSpacing: 2,
+        children: [
+          Text(plan, style: TextStyle(color: skin.textMuted, fontSize: 14)),
+          Icon(Icons.arrow_forward, color: skin.textMuted.withValues(alpha: 0.7), size: 15),
+          Text(real, style: TextStyle(color: skin.textPrimary,
+              fontSize: 16, fontWeight: FontWeight.w800)),
+        ],
       ),
-      child: Text('$pct%', style: TextStyle(
-          color: color, fontSize: 11, fontWeight: FontWeight.w700)),
-    ),
-  ]);
+    ],
+  );
 }
 
 // ── Carga de entrenamiento (TRIMP) ───────────────────────────────
@@ -1129,15 +1356,22 @@ class _TrainingLoadCard extends StatelessWidget {
           shape: BoxShape.circle,
           border: Border.all(color: _color.withValues(alpha: 0.4), width: 2),
         ),
-        child: Center(child: Text(trimp.round().toString(),
-          style: TextStyle(color: _color, fontSize: 18, fontWeight: FontWeight.w800))),
+        // El círculo tiene un tamaño fijo: el número se encoge para caber en
+        // vez de recortarse cuando la letra del sistema es grande.
+        child: Center(child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: FittedBox(fit: BoxFit.scaleDown, child: Text(trimp.round().toString(),
+            style: TextStyle(color: _color, fontSize: 18, fontWeight: FontWeight.w800))),
+        )),
       ),
       const SizedBox(width: 16),
       Expanded(child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('TRIMP — Carga $_level', style: TextStyle(
-              color: skin.textPrimary, fontSize: 13, fontWeight: FontWeight.w700)),
+          Text('Carga ${_level.toLowerCase()}', maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: skin.textPrimary, fontSize: 14,
+                  fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
           Text(
             'Índice de carga basado en frecuencia cardíaca y duración. '
@@ -1177,17 +1411,25 @@ class _FeelingsCard extends StatelessWidget {
     decoration: BoxDecoration(
       color: skin.backgroundCard, borderRadius: BorderRadius.circular(12)),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      if (rpe > 0) Row(children: [
-        _FeelingDot(label: 'RPE', value: '$rpe/10',
-            sublabel: _rpeLabels[rpe] ?? '', color: _rpeColor(skin), skin: skin),
-        if (energy != null) ...[
-          const SizedBox(width: 12),
-          _FeelingDot(label: 'ENERGÍA', value: '$energy/5',
-              sublabel: energy! >= 4 ? 'Muy bien' : energy! >= 3 ? 'Regular' : 'Cansado',
-              color: energy! >= 4 ? skin.success : energy! >= 3 ? skin.warning : skin.error,
-              skin: skin),
+      // Expanded: las dos cajas se reparten el ancho a partes iguales. Sin él
+      // se ajustaban al texto y "Máximo absoluto" desbordaba la fila.
+      if (rpe > 0) IntrinsicHeight(child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // "Esfuerzo (RPE)" no cabía en media pantalla y salía "Esfuerzo (...".
+          Expanded(child: _FeelingDot(label: 'Esfuerzo', value: '$rpe',
+              unit: '/10',
+              sublabel: _rpeLabels[rpe] ?? '', color: _rpeColor(skin), skin: skin)),
+          if (energy != null) ...[
+            const SizedBox(width: 12),
+            Expanded(child: _FeelingDot(label: 'Energía', value: '$energy',
+                unit: '/5',
+                sublabel: energy! >= 4 ? 'Muy bien' : energy! >= 3 ? 'Regular' : 'Cansado',
+                color: energy! >= 4 ? skin.success : energy! >= 3 ? skin.warning : skin.error,
+                skin: skin)),
+          ],
         ],
-      ]),
+      )),
       if (notes != null && notes!.isNotEmpty) ...[
         const SizedBox(height: 12),
         Container(
@@ -1199,8 +1441,14 @@ class _FeelingsCard extends StatelessWidget {
             border: Border.all(color: skin.border),
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('NOTAS DEL ATLETA', style: TextStyle(
-                color: skin.textMuted, fontSize: 9, letterSpacing: 1.5)),
+            Row(children: [
+              Icon(Icons.edit_note, size: 15, color: skin.textMuted),
+              const SizedBox(width: 5),
+              Expanded(child: Text('Tus notas', maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: skin.textMuted, fontSize: 11,
+                      fontWeight: FontWeight.w600))),
+            ]),
             const SizedBox(height: 6),
             Text(notes!, style: TextStyle(color: skin.textSecondary, fontSize: 13)),
           ]),
@@ -1212,26 +1460,44 @@ class _FeelingsCard extends StatelessWidget {
 
 class _FeelingDot extends StatelessWidget {
   final SkinConfig skin;
-  final String label, value, sublabel;
+  final String label, value, sublabel, unit;
   final Color  color;
   const _FeelingDot({required this.skin, required this.label,
-      required this.value, required this.sublabel, required this.color});
+      required this.value, required this.sublabel, required this.color,
+      this.unit = ''});
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
     decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: color.withValues(alpha: 0.3)),
+      color: color.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: color.withValues(alpha: 0.35)),
     ),
-    child: Column(children: [
-      Text(label, style: TextStyle(color: skin.textMuted, fontSize: 9, letterSpacing: 1)),
-      const SizedBox(height: 4),
-      Text(value, style: TextStyle(
-          color: color, fontSize: 20, fontWeight: FontWeight.w800)),
-      const SizedBox(height: 2),
-      Text(sublabel, style: TextStyle(color: skin.textMuted, fontSize: 10)),
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Text(label, textAlign: TextAlign.center, maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: skin.textMuted, fontSize: 11,
+              fontWeight: FontWeight.w600)),
+      const SizedBox(height: 6),
+      // El "/10" pequeño al lado del número: así el dato manda y la escala
+      // acompaña, en vez de competir por el mismo tamaño.
+      FittedBox(fit: BoxFit.scaleDown, child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value, style: TextStyle(
+              color: color, fontSize: 24, fontWeight: FontWeight.w900, height: 1)),
+          if (unit.isNotEmpty) Text(unit, style: TextStyle(
+              color: color.withValues(alpha: 0.75), fontSize: 13,
+              fontWeight: FontWeight.w700)),
+        ],
+      )),
+      const SizedBox(height: 3),
+      Text(sublabel, textAlign: TextAlign.center, maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: skin.textSecondary, fontSize: 11)),
     ]),
   );
 }
@@ -1264,17 +1530,35 @@ class _MotivationalCard extends StatelessWidget {
 }
 
 // ── Section header ───────────────────────────────────────────────
+// Encabezado de sección: barra del color de la marca, icono y título.
+//
+// Antes era un texto gris de 10 px en MAYÚSCULAS con letterSpacing 2 — se perdía
+// contra el fondo y, con la letra del sistema grande, "ZONAS DE FRECUENCIA
+// CARDÍACA" se comía a sí mismo. Ahora la sección se distingue de un vistazo.
 class _SectionHeader extends StatelessWidget {
   final String     text;
   final SkinConfig skin;
-  const _SectionHeader(this.text, this.skin);
+  final IconData?  icon;
+  const _SectionHeader(this.text, this.skin, {this.icon});
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 24, 16, 10),
-    child: Text(text, style: TextStyle(
-        color: skin.textMuted, fontSize: 10,
-        letterSpacing: 2, fontWeight: FontWeight.w600)),
+    padding: const EdgeInsets.fromLTRB(16, 26, 16, 12),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+      Container(
+        width: 3, height: 18,
+        decoration: BoxDecoration(
+          color: skin.accent, borderRadius: BorderRadius.circular(2)),
+      ),
+      const SizedBox(width: 9),
+      if (icon != null) ...[
+        Icon(icon, size: 16, color: skin.accent),
+        const SizedBox(width: 7),
+      ],
+      Expanded(child: Text(text, maxLines: 2, overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: skin.textPrimary, fontSize: 14,
+              fontWeight: FontWeight.w800, letterSpacing: 0.1))),
+    ]),
   );
 }
 
@@ -1301,7 +1585,7 @@ class _TablaBloques extends StatelessWidget {
       child: Column(
         children: List.generate(bloques.length, (i) {
           final b       = bloques[i];
-          final nombre  = (b['block'] ?? 'Bloque \${i + 1}').toString();
+          final nombre  = (b['block'] ?? 'Bloque ${i + 1}').toString();
           final zona    = b['zone']?.toString();
           final min     = _pi(b['min']);
           final prev    = _pi(b['min_previstos']);
@@ -1310,10 +1594,10 @@ class _TablaBloques extends StatelessWidget {
           final fc      = _pi(b['hr_avg']);
 
           final detalle = <String>[
-            if (min != null) '\$min min\${prev != null && prev != min ? " (de \$prev)" : ""}',
-            if (metros >= 100) '\${(metros / 1000).toStringAsFixed(2)} km',
-            if (ritmo != null) '\${fmtPace(ritmo)}/km',
-            if (fc != null) '\$fc ppm',
+            if (min != null) '$min min${prev != null && prev != min ? " (de $prev)" : ""}',
+            if (metros >= 100) '${(metros / 1000).toStringAsFixed(2)} km',
+            if (ritmo != null) '${fmtPace(ritmo)}/km',
+            if (fc != null) '$fc ppm',
           ].join(' · ');
 
           return Container(
@@ -1330,7 +1614,7 @@ class _TablaBloques extends StatelessWidget {
                     color: skin.accent.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(7),
                   ),
-                  child: Text('\${i + 1}', style: TextStyle(
+                  child: Text('${i + 1}', style: TextStyle(
                       color: skin.accent, fontSize: 12, fontWeight: FontWeight.w700)),
                 ),
                 const SizedBox(width: 11),
