@@ -52,3 +52,11 @@ GoogleService-Info.plist
 # Escritorio: generado por 'flutter create' pero la app no se distribuye en Windows.
 # Si algún día se targetea, se regenera con: flutter create --platforms=windows .
 windows/
+
+# APKs compilados. Se guardan con su número de versión para poder volver a una
+# anterior, pero son entregables, no código: 65 MB cada uno y ya van 719 MB en
+# esta carpeta. Un repositorio que los lleve dentro no se puede clonar en un rato.
+# Se quedan en disco.
+APK_BUILDS/
+*.apk
+*.aab
