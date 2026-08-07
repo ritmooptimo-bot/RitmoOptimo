@@ -18,15 +18,19 @@ class ProfileScreen extends ConsumerWidget {
       backgroundColor: skin.background,
       appBar: AppBar(
         backgroundColor: skin.backgroundSecondary,
-        title: Text('PERFIL',
-            style: TextStyle(color: skin.textPrimary, letterSpacing: 2, fontSize: 14)),
+        // "Ajustes", no "Perfil": aquí no hay ni un dato personal —ni nombre, ni
+        // correo, ni marcas—, solo el color de la app y el cierre de sesión.
+        // Llamarlo perfil prometía una ficha de deportista que no existe.
+        title: Text('Ajustes',
+            style: TextStyle(color: skin.textPrimary, fontSize: 16,
+                fontWeight: FontWeight.w700)),
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
           // ── Skin selector ────────────────────────────────
-          Text('DISEÑO DE LA APP', style: TextStyle(
-              color: skin.textMuted, fontSize: 10, letterSpacing: 2)),
+          Text('Diseño de la app', style: TextStyle(
+              color: skin.textMuted, fontSize: 12, fontWeight: FontWeight.w600)),
           const SizedBox(height: 12),
 
           _SkinOption(

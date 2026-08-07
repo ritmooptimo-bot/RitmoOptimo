@@ -459,9 +459,13 @@ class _Header extends StatelessWidget {
           // necesitaba ese sitio mucho más.
           // Compacto a propósito: con el botón a tamaño normal, el estado del día
           // se quedaba sin ancho y "Listo para apretar" salía cortado.
+          // Rueda dentada, no una cabecita: detrás no hay ningún dato personal
+          // —ni nombre, ni correo, ni marcas—, solo el color de la app y el
+          // cierre de sesión. Un muñequito promete una ficha de deportista que
+          // no existe; un engranaje dice lo que hay.
           IconButton(
-            icon: Icon(Icons.person_outline, color: skin.textSecondary, size: 20),
-            tooltip: 'Mi perfil',
+            icon: Icon(Icons.settings_outlined, color: skin.textSecondary, size: 20),
+            tooltip: 'Ajustes',
             padding: EdgeInsets.zero,
             visualDensity: VisualDensity.compact,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
