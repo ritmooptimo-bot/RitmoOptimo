@@ -54,27 +54,47 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                   child: CircularProgressIndicator(color: skin.accent),
                 ),
               )
-            else ...[
-              // TU PROGRESO — lo primero del Historial, porque es la pregunta que
-              // de verdad se hace el deportista: "¿estoy mejorando?".
-              const _ProgressCard(),
-              _CalendarGrid(
-                skin: skin,
-                state: state,
-                selectedDay: _selectedDay,
-                onDayTap: (day) => setState(() {
-                  _selectedDay = _selectedDay == day ? null : day;
-                }),
-              ),
-              const SizedBox(height: 8),
+            else
+              // ⚠️ ESTO ERA UN Column CON TRES HIJOS FIJOS Y UN Expanded AL FINAL,
+              // Y ES EL MISMO FALLO QUE YA VOLVIÓ DOS VECES EN LA PESTAÑA PLAN.
+              //
+              // Con Expanded, la lista de sesiones se queda con "lo que sobre"
+              // después de la tarjeta de progreso y del calendario. Y la tarjeta de
+              // progreso es un párrafo que crece: con la letra del sistema al 180 %
+              // —la que usa David— ocupaba ella sola media pantalla, el calendario
+              // la otra media, y a las sesiones les quedaban cero píxeles. Como el
+              // Column tampoco se desplaza, el dedo no movía nada: no había ni
+              // lista ni scroll.
+              //
+              // La solución no es acortar el texto: es que NADIE reparta altura
+              // fija. Progreso, calendario y sesiones van en el MISMO scroll, y lo
+              // de arriba se desliza al bajar dejando la pantalla a las sesiones.
+              // Solo la cabecera se queda quieta, porque lleva el mes y las flechas.
               Expanded(
-                child: _SessionList(
-                  skin: skin,
-                  sessions: visibleSessions,
-                  selectedDay: _selectedDay,
+                child: CustomScrollView(
+                  slivers: [
+                    // TU PROGRESO — lo primero del Historial, porque es la pregunta
+                    // que de verdad se hace el deportista: "¿estoy mejorando?".
+                    const SliverToBoxAdapter(child: _ProgressCard()),
+                    SliverToBoxAdapter(
+                      child: _CalendarGrid(
+                        skin: skin,
+                        state: state,
+                        selectedDay: _selectedDay,
+                        onDayTap: (day) => setState(() {
+                          _selectedDay = _selectedDay == day ? null : day;
+                        }),
+                      ),
+                    ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                    _SessionList(
+                      skin: skin,
+                      sessions: visibleSessions,
+                      selectedDay: _selectedDay,
+                    ),
+                  ],
                 ),
               ),
-            ],
           ],
         ),
       ),
@@ -536,26 +556,37 @@ class _SessionList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Devuelve SLIVERS, no widgets normales: va dentro del mismo scroll que la
+    // tarjeta de progreso y el calendario (ver el comentario del build de arriba).
     if (sessions.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.calendar_month_outlined, color: skin.textMuted, size: 40),
-            const SizedBox(height: 12),
-            Text(
-              selectedDay != null
-                  ? 'Sin sesiones este día'
-                  : 'Sin sesiones este mes',
-              style: TextStyle(color: skin.textMuted, fontSize: 14),
-            ),
-          ],
+      // hasScrollBody: false — el mensaje se centra en el hueco que quede, pero
+      // sin exigir altura propia: si arriba ya no cabe nada, el scroll sigue
+      // funcionando en vez de partirse.
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.calendar_month_outlined, color: skin.textMuted, size: 40),
+              const SizedBox(height: 12),
+              Text(
+                selectedDay != null
+                    ? 'Sin sesiones este día'
+                    : 'Sin sesiones este mes',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: skin.textMuted, fontSize: 14),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    return ListView.builder(
+    return SliverPadding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+      sliver: SliverList.builder(
       itemCount: sessions.length,
       itemBuilder: (_, i) {
         final s      = sessions[i];
@@ -649,6 +680,13 @@ class _SessionList extends ConsumerWidget {
                               Expanded(
                                 child: Text(
                                   s['title'] as String? ?? type,
+                                  // Sin esto, un título largo se parte a MITAD DE
+                                  // PALABRA: con la letra al 180 % "Recuperación"
+                                  // no cabe de una pieza en la columna que le queda
+                                  // al lado del icono, y salía "Recuperació / n
+                                  // activa y movilidad".
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     color: skin.textPrimary,
                                     fontSize: 14,
@@ -658,26 +696,38 @@ class _SessionList extends ConsumerWidget {
                               ),
                             ],
                           ),
-                          if (dur.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(dur, style: TextStyle(color: skin.textMuted, fontSize: 12)),
-                          ],
+                          const SizedBox(height: 5),
+                          // La duración y el estado, debajo y en la misma línea:
+                          // el estado ocupaba sitio a la derecha del título y era
+                          // lo que estrechaba la columna. Wrap para que si la letra
+                          // es enorme el estado baje solo.
+                          Wrap(
+                            spacing: 8, runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (dur.isNotEmpty)
+                                Text(dur, style: TextStyle(
+                                    color: skin.textMuted, fontSize: 12)),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  label,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: color,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          color: color,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -689,6 +739,7 @@ class _SessionList extends ConsumerWidget {
           ],
         );
       },
+      ),
     );
   }
 }
