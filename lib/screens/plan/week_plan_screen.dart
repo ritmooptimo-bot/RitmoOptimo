@@ -6,6 +6,7 @@ import 'competitions_sheet.dart';
 import '../../providers/plan_calendar_provider.dart';
 import '../../config/skins/skin_config.dart';
 import '../../core/network/api_client.dart';
+import '../../widgets/boton_ajustes.dart';
 
 // Vista LISTA (semanal) — FutureProvider autoDispose: se reinicia al abrir.
 final _weekPlanProvider =
@@ -142,6 +143,7 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
             color: skin.accent,
             onPressed: () => _abrirCompeticiones(context),
           ),
+          const BotonAjustes(),
         ],
       ),
       body: Column(

@@ -12,6 +12,7 @@ import '../../core/notifications/notification_service.dart';
 import '../../providers/workout_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../config/skins/skin_config.dart';
+import '../../widgets/boton_ajustes.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -463,14 +464,10 @@ class _Header extends StatelessWidget {
           // —ni nombre, ni correo, ni marcas—, solo el color de la app y el
           // cierre de sesión. Un muñequito promete una ficha de deportista que
           // no existe; un engranaje dice lo que hay.
-          IconButton(
-            icon: Icon(Icons.settings_outlined, color: skin.textSecondary, size: 20),
-            tooltip: 'Ajustes',
-            padding: EdgeInsets.zero,
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            onPressed: () => context.push('/profile'),
-          ),
+          //
+          // Compacto aquí porque comparte fila con el estado del día y el aviso
+          // de alertas. En las demás pestañas va a tamaño normal.
+          const BotonAjustes(compacto: true),
           const SizedBox(width: 4),
           // Alerta badge — PULSABLE: abre la lista de avisos del deportista
           if (dashboard.pendingAlerts > 0)

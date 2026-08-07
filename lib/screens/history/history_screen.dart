@@ -6,6 +6,7 @@ import '../../providers/skin_provider.dart';
 import '../../models/sport.dart';
 import '../../config/skins/skin_config.dart';
 import '../../core/network/api_client.dart';
+import '../../widgets/boton_ajustes.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -283,30 +284,51 @@ class _Header extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ⚠️ TÍTULO Y MES EN FILAS DISTINTAS.
+          //
+          // Iban los cuatro en la misma: "Historial", las dos flechas, el mes y
+          // el engranaje. Con la letra del sistema al 180 % no caben, y el que
+          // sobra —el último— se sale de la pantalla sin avisar: el engranaje
+          // simplemente no aparecía. Un Row no protesta al recortar, se queda
+          // callado, y por eso hay que MIRAR la pantalla y no solo el código.
           Row(
             children: [
-              Text('Historial', style: TextStyle(
-                color: skin.textPrimary,
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-              )),
-              const Spacer(),
+              Expanded(
+                child: Text('Historial',
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: skin.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                  )),
+              ),
+              const BotonAjustes(),
+            ],
+          ),
+          Row(
+            children: [
               IconButton(
                 icon: Icon(Icons.chevron_left, color: skin.textPrimary),
                 onPressed: onPrev,
+                visualDensity: VisualDensity.compact,
               ),
-              Text(
-                '${monthNames[m.month]} ${m.year}',
-                style: TextStyle(
-                  color: skin.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Text(
+                  '${monthNames[m.month]} ${m.year}',
+                  textAlign: TextAlign.center,
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: skin.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               IconButton(
                 icon: Icon(Icons.chevron_right,
                     color: isNow ? skin.textMuted : skin.textPrimary),
                 onPressed: isNow ? null : onNext,
+                visualDensity: VisualDensity.compact,
               ),
             ],
           ),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/skin_provider.dart';
 import '../../core/network/api_client.dart';
 import '../../core/notifications/notification_service.dart';
+import '../../widgets/boton_ajustes.dart';
 import 'hrv_camera_screen.dart';
 import 'hrv_band_screen.dart';
 
@@ -331,8 +332,10 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
       backgroundColor: skin.background,
       appBar: AppBar(
         backgroundColor: skin.backgroundSecondary,
-        title: Text('CHECK-IN DIARIO',
-            style: TextStyle(color: skin.textPrimary, letterSpacing: 2, fontSize: 14)),
+        title: Text('Check-in diario',
+            style: TextStyle(color: skin.textPrimary, fontSize: 16,
+                fontWeight: FontWeight.w700)),
+        actions: const [BotonAjustes()],
       ),
       body: _done
           ? _DoneView(skin: skin)

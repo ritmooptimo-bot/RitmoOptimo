@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/skin_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../config/skins/skin_config.dart';
+import '../../widgets/boton_ajustes.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key});
@@ -94,6 +95,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             Text('Ritmo Óptimo · estamos contigo', style: TextStyle(color: skin.textMuted, fontSize: 11)),
           ],
         ),
+        actions: const [BotonAjustes()],
       ),
       body: Column(
         children: [
