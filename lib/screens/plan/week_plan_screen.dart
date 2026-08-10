@@ -993,9 +993,14 @@ class _SessionTile extends StatelessWidget {
     }
   }
 
+  // Devuelve '' cuando no hay duración o es CERO: un día de descanso no tiene
+  // por qué anunciar "0min". (Los descansos se guardan con duración 0 desde el
+  // 10/08 — antes conservaban los minutos del entreno que se había quitado.)
   static String _fmtDuration(dynamic raw) {
     if (raw == null) return '';
-    final totalSec = (double.tryParse(raw.toString()) ?? 0) * 60;
+    final min = double.tryParse(raw.toString()) ?? 0;
+    if (min <= 0) return '';
+    final totalSec = min * 60;
     final m = totalSec ~/ 60;
     final s = totalSec.round() % 60;
     return s > 0 ? '${m}min ${s}s' : '${m}min';
@@ -1117,9 +1122,9 @@ class _SessionTile extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            rawMin != null
-                                ? '${_fmtDate(date)}  ·  ${_fmtDuration(rawMin)}'
-                                : _fmtDate(date),
+                            _fmtDuration(rawMin).isEmpty
+                                ? _fmtDate(date)
+                                : '${_fmtDate(date)}  ·  ${_fmtDuration(rawMin)}',
                             style:
                                 TextStyle(color: skin.textMuted, fontSize: 12),
                             overflow: TextOverflow.ellipsis,

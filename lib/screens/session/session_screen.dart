@@ -617,6 +617,26 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 ),
               ),
             )
+          // En un día de descanso no se ofrece empezar. Inicio ya escondía su
+          // botón para 'rest', pero desde el Plan se llegaba aquí y salía
+          // "COMENZAR" igual: el mismo día decía descanso en una pantalla y te
+          // invitaba a entrenar en la otra.
+          else if (sessionStatus == 'rest')
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Row(
+                children: [
+                  Icon(Icons.hotel_outlined, color: skin.textMuted, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Hoy toca descansar. El descanso también entrena.',
+                      style: TextStyle(color: skin.textMuted, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            )
           else
             Padding(
               padding: const EdgeInsets.all(24),

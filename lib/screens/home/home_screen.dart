@@ -1679,13 +1679,19 @@ class _SessionContent extends StatelessWidget {
               _sportLabel(sport),
               style: TextStyle(color: skin.textSecondary, fontSize: 13),
             ),
-            const SizedBox(width: 16),
-            Icon(Icons.timer_outlined, color: skin.accentSecondary, size: 15),
-            const SizedBox(width: 5),
-            Text(
-              '${minutes} min',
-              style: TextStyle(color: skin.textSecondary, fontSize: 13),
-            ),
+            // Un día de descanso no lleva minutos: mostraba "0 min" al lado del
+            // chip "Descanso". Los descansos se guardan con duración 0 desde el
+            // 10/08 (antes se quedaban con los del entreno que se había quitado,
+            // y la tarjeta seguía anunciando el rodaje de 60 min).
+            if (minutes > 0) ...[
+              const SizedBox(width: 16),
+              Icon(Icons.timer_outlined, color: skin.accentSecondary, size: 15),
+              const SizedBox(width: 5),
+              Text(
+                '$minutes min',
+                style: TextStyle(color: skin.textSecondary, fontSize: 13),
+              ),
+            ],
           ],
         ),
         // 'rest' faltaba en la lista: el día de descanso mostraba el chip
