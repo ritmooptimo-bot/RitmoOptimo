@@ -221,16 +221,30 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
     final state = ref.watch(planCalendarProvider);
     final notifier = ref.read(planCalendarProvider.notifier);
 
-    // Con un día tocado → filtramos ese día; si no, agenda anclada en HOY.
-    final filtered = _selectedDay == null
+    final isCurrentMonth = _isCurrentMonth(state.month);
+
+    // EL CALENDARIO ENSEÑA UN DÍA, NO EL MES ENTERO.
+    //
+    // ⚠️ Antes, sin tocar nada, debajo de la rejilla se listaban TODAS las
+    // sesiones del mes (y las pasadas, subiendo). David: "abajo del calendario
+    // un listado de todas las sesiones de los diferentes días cuando debería
+    // aparecer solo la del día en curso". Y tiene razón en el fondo: para ver
+    // varios días seguidos ya está la vista Lista; lo que un calendario
+    // responde es "¿qué hay ESE día?".
+    //
+    // Así que hay SIEMPRE un día mostrado: el que toque, y si no ha tocado
+    // ninguno, HOY. En un mes que no es el actual no hay "hoy" que valga, y
+    // entonces la respuesta honesta es pedirle que toque un día.
+    final diaMostrado = _selectedDay ?? (isCurrentMonth ? DateTime.now().day : null);
+
+    final filtered = diaMostrado == null
         ? null
         : state.sessions.where((s) {
             final raw =
                 (s['scheduled_date'] ?? s['session_date']) as String? ?? '';
             final dp = raw.length >= 10 ? raw.substring(0, 10) : raw;
-            return int.tryParse(dp.split('-').last) == _selectedDay;
+            return int.tryParse(dp.split('-').last) == diaMostrado;
           }).toList();
-    final isCurrentMonth = _isCurrentMonth(state.month);
 
     // ⚠️ ESTO ERA UN Column CON UN Expanded AL FINAL, Y POR ESO SE ROMPIÓ.
     // Cabecera del mes + rejilla de seis filas + el aviso de competiciones se
@@ -342,10 +356,12 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
       // Antes, tocar una carrera abría la hoja con LAS DIEZ. Lo que quiere ver
       // es la de ese día y cuánto falta para ella — sea su objetivo o una de
       // preparación. El listado completo sigue a un toque, en la tarjeta.
-      if (_selectedDay != null)
+      // Va por `diaMostrado`, no por `_selectedDay`: si HOY hay carrera, tiene
+      // que verla sin tocar nada.
+      if (diaMostrado != null)
         ...carrerasDelDia(
           ref.watch(competicionesProvider).valueOrNull,
-          DateTime(state.month.year, state.month.month, _selectedDay!),
+          DateTime(state.month.year, state.month.month, diaMostrado),
         ).map((c) => Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
               child: _CompeticionDelDia(
@@ -356,64 +372,61 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
             )),
     ];
 
-    // DÍA SELECCIONADO: todo en un solo scroll. El calendario se desliza hacia
-    // arriba y las sesiones de ese día disponen de la pantalla entera.
-    if (filtered != null) {
-      return ListView(
-        padding: const EdgeInsets.only(bottom: 16),
-        children: [
-          ...cabecera,
-          ...rejilla,
-          // Si ese día hay carrera, ya se ha pintado arriba: decir "sin sesiones"
-          // a secas sonaría a que no hay nada, cuando hay lo más importante.
-          if (filtered.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                child: Text(
-                  carrerasMes.containsKey(_selectedDay)
-                      ? 'Ese día no hay entreno programado: toca la carrera.'
-                      : 'Sin sesiones este día',
+    // TODO EN UN SOLO SCROLL: cabecera + rejilla + lo que hay ESE día.
+    //
+    // ⚠️ NI Column NI Expanded AQUÍ. El scroll del Plan se ha roto DOS veces por
+    // lo mismo: con un Expanded al final, la agenda se queda con "lo que sobre",
+    // y lo que sobra depende de cuánto ocupen el aviso de carreras y la rejilla
+    // de seis filas. Bastó con que el aviso creciera una línea ("Cross Pinar de
+    // Hierro · Faltan 89 días · Tu objetivo principal" ocupa dos donde antes
+    // había una) para que a las sesiones les quedara una franja de cien píxeles
+    // y el scroll no tuviera recorrido. El calendario va DENTRO del scroll.
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
+      children: [
+        ...cabecera,
+        ...rejilla,
+        if (filtered == null)
+          // Mes distinto del actual y sin tocar nada: no hay "hoy" que enseñar.
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            child: Center(
+              child: Text('Toca un día para ver lo que tienes',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: skin.textMuted, fontSize: 14),
-                ),
+                  style: TextStyle(color: skin.textMuted, fontSize: 14)),
+            ),
+          )
+        else if (filtered.isEmpty)
+          // Si ese día hay carrera, ya se ha pintado arriba: decir "sin
+          // sesiones" a secas sonaría a que no hay nada, cuando hay lo más
+          // importante.
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Center(
+              child: Text(
+                carrerasMes.containsKey(diaMostrado)
+                    ? 'Ese día no hay entreno programado: toca la carrera.'
+                    : _selectedDay == null
+                        ? 'Hoy no tienes sesión programada'
+                        : 'Sin sesiones este día',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: skin.textMuted, fontSize: 14),
               ),
-            )
-          else
-            ...filtered.map((raw) {
-              final s = Map<String, dynamic>.from(raw);
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                child: _SessionTile(
-                    skin: skin,
-                    session: s,
-                    onTap: () => _openSession(s),
-                    isToday: _isTodayDate(s)),
-              );
-            }),
-        ],
-      );
-    }
-
-    // SIN DÍA SELECCIONADO: UN SOLO SCROLL, calendario incluido.
-    //
-    // ⚠️ ESTO VOLVIÓ A SER UN Column CON UN Expanded AL FINAL, Y VOLVIÓ A ROMPERSE.
-    //
-    // Con Expanded, la agenda se queda con "lo que sobre" — y lo que sobra
-    // depende de cuánto ocupen el aviso de carreras y la rejilla de seis filas.
-    // Basta con que el aviso crezca una línea (pasó justo al hacer que contara
-    // los días hasta el objetivo: "Cross Pinar de Hierro · Faltan 94 días · Tu
-    // objetivo principal" ocupa dos líneas donde antes había una) para que a las
-    // sesiones les quede una franja de unos cien píxeles debajo del calendario.
-    //
-    // La solución no es recortar el aviso: es que NADIE reparta altura fija. El
-    // calendario entra en el mismo scroll que la agenda y se desliza hacia
-    // arriba al bajar, dejando la pantalla entera para las sesiones.
-    return _AnchoredAgenda(
-      skin: skin,
-      sessions: state.sessions,
-      onTap: _openSession,
-      cabecera: [...cabecera, ...rejilla],
+            ),
+          )
+        else
+          ...filtered.map((raw) {
+            final s = Map<String, dynamic>.from(raw);
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+              child: _SessionTile(
+                  skin: skin,
+                  session: s,
+                  onTap: () => _openSession(s),
+                  isToday: _isTodayDate(s)),
+            );
+          }),
+      ],
     );
   }
 }
@@ -500,109 +513,6 @@ class _CompeticionDelDia extends StatelessWidget {
 // ↓ para los próximos. Usa el anclado nativo (CustomScrollView.center),
 // sin librerías: el sliver "centro" (hoy+futuro) empieza en el offset 0 y
 // el de pasados crece hacia arriba (índice 0 = el pasado más reciente).
-class _AnchoredAgenda extends StatelessWidget {
-  final SkinConfig skin;
-  final List<Map<String, dynamic>> sessions;
-  final void Function(Map<String, dynamic>) onTap;
-  /// Aviso de carreras + cabecera del mes + rejilla. Van DENTRO de este scroll,
-  /// no encima: si se quedan fuera, se reparten la altura con la agenda y a las
-  /// sesiones les toca la miseria que sobre (ver el comentario en el build).
-  final List<Widget> cabecera;
-
-  const _AnchoredAgenda({
-    required this.skin,
-    required this.sessions,
-    required this.onTap,
-    this.cabecera = const [],
-  });
-
-  static String _dateOf(Map<String, dynamic> s) {
-    final raw = (s['scheduled_date'] ?? s['session_date']) as String? ?? '';
-    return raw.length >= 10 ? raw.substring(0, 10) : raw;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final n = DateTime.now();
-    final today =
-        '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
-    final all = sessions.map((s) => Map<String, dynamic>.from(s)).toList();
-    final future = all.where((s) => _dateOf(s).compareTo(today) >= 0).toList()
-      ..sort((a, b) => _dateOf(a).compareTo(_dateOf(b))); // asc: hoy primero
-    final past = all.where((s) => _dateOf(s).compareTo(today) < 0).toList()
-      ..sort((a, b) => _dateOf(b).compareTo(_dateOf(a))); // desc: reciente arriba
-
-    // Los tres caminos de abajo pintan la cabecera: se vea el mes que se vea, y
-    // haya o no sesiones, el calendario tiene que estar.
-    if (future.isEmpty && past.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.only(bottom: 16),
-        children: [
-          ...cabecera,
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 32),
-            child: Center(
-              child: Text('Sin sesiones este mes',
-                  style: TextStyle(color: skin.textMuted, fontSize: 14)),
-            ),
-          ),
-        ],
-      );
-    }
-
-    Widget tile(Map<String, dynamic> s) => _SessionTile(
-        skin: skin,
-        session: s,
-        onTap: () => onTap(s),
-        isToday: _dateOf(s) == today);
-
-    // Sin hoy/futuro → lista normal ascendente de los pasados.
-    if (future.isEmpty) {
-      final asc = [...past]..sort((a, b) => _dateOf(a).compareTo(_dateOf(b)));
-      return ListView(
-        padding: const EdgeInsets.only(bottom: 16),
-        children: [
-          ...cabecera,
-          ...asc.map((s) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: tile(s),
-              )),
-        ],
-      );
-    }
-
-    // La cabecera va en el sliver CENTRO y antes que hoy: al abrir la pantalla,
-    // el desplazamiento cero cae justo aquí, así que se ve el calendario y
-    // debajo la sesión de hoy. Al bajar, el calendario se va y las sesiones se
-    // quedan con todo. Al subir, aparecen los días pasados.
-    const centerKey = ValueKey('planAgendaCenter');
-    return CustomScrollView(
-      center: centerKey,
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (_, i) => tile(past[i]),
-              childCount: past.length,
-            ),
-          ),
-        ),
-        SliverList(
-          key: centerKey,
-          delegate: SliverChildListDelegate([
-            ...cabecera,
-            ...future.map((s) => Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                  child: tile(s),
-                )),
-            const SizedBox(height: 16),
-          ]),
-        ),
-      ],
-    );
-  }
-}
 
 // ── Toggle Lista / Calendario ────────────────────────────────────
 class _ViewToggle extends StatelessWidget {
