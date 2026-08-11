@@ -5,6 +5,7 @@ import '../../providers/skin_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../config/skins/skin_config.dart';
 import '../../widgets/boton_ajustes.dart';
+import '../../providers/equipo_provider.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key});
@@ -92,7 +93,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text('Tu equipo', style: TextStyle(color: skin.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
-            Text('Ritmo Óptimo · estamos contigo', style: TextStyle(color: skin.textMuted, fontSize: 11)),
+            // CON NOMBRES, NO CON UN ESLOGAN. Aquí ponía "Ritmo Óptimo · estamos
+            // contigo": simpático y vacío. Lo que el deportista paga es el
+            // criterio de profesionales concretos, y con varios (entrenador de su
+            // disciplina + nutricionista + psicólogo) tiene derecho a saber quién
+            // hay detrás de lo que lee. Si no se puede cargar, se queda el
+            // eslogan de siempre — nunca una línea vacía.
+            Builder(builder: (_) {
+              final equipo = ref.watch(equipoProvider).valueOrNull ?? const [];
+              final resumen = resumenEquipo(equipo);
+              return Text(
+                resumen.isEmpty ? 'Ritmo Óptimo · estamos contigo' : resumen,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: skin.textMuted, fontSize: 11),
+              );
+            }),
           ],
         ),
         actions: const [BotonAjustes()],

@@ -7,6 +7,7 @@ import '../../providers/plan_calendar_provider.dart';
 import '../../config/skins/skin_config.dart';
 import '../../core/network/api_client.dart';
 import '../../widgets/boton_ajustes.dart';
+import '../../providers/equipo_provider.dart';
 
 // Vista LISTA (semanal) — FutureProvider autoDispose: se reinicia al abrir.
 final _weekPlanProvider =
@@ -107,6 +108,12 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
   Widget build(BuildContext context) {
     final skin = ref.watch(activeSkinProvider);
     final coach = ref.watch(_coachNameProvider).valueOrNull;
+    // El equipo manda sobre el nombre suelto; si aún no ha llegado, se usa el
+    // de siempre para que la cabecera no parpadee entre vacío y lleno.
+    final equipo = ref.watch(equipoProvider).valueOrNull ?? const <Profesional>[];
+    final cabeceraEquipo = resumenEquipo(equipo).isNotEmpty
+        ? resumenEquipo(equipo)
+        : (coach != null && coach.trim().isNotEmpty ? 'Entrenador: ${coach.trim()}' : '');
     return Scaffold(
       backgroundColor: skin.background,
       appBar: AppBar(
@@ -115,9 +122,12 @@ class _WeekPlanScreenState extends ConsumerState<WeekPlanScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('Plan'),
-            if (coach != null && coach.trim().isNotEmpty)
+            // Quién le lleva. Con un entrenador sale "Entrenador: Raúl", como
+            // siempre; con varios, los dos primeros y "+N". El entrenador de la
+            // disciplina va delante: es de quien es el plan que está mirando.
+            if (cabeceraEquipo.isNotEmpty)
               Text(
-                'Entrenador: ${coach.trim()}',
+                cabeceraEquipo,
                 style: TextStyle(
                   fontSize: 12,
                   color: skin.textMuted,

@@ -137,6 +137,19 @@ class ApiClient {
     return (r.data as Map<String, dynamic>)['coach_name'] as String?;
   }
 
+  /// SU EQUIPO: cada profesional con su nombre y su especialidad.
+  ///
+  /// Lo que se vende no es "una IA que entrena": es el criterio de
+  /// profesionales de verdad. Si todo le llega bajo una etiqueta genérica, se
+  /// pierde justo aquello por lo que paga — por eso el deportista tiene que ver
+  /// de quién es lo que está leyendo.
+  Future<List<Map<String, dynamic>>> getTeam() async {
+    final r = await _dio.get('/athlete/team');
+    final raw = (r.data as Map<String, dynamic>)['team'];
+    if (raw is! List) return const [];
+    return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
   // ── HRV vs línea base de 7 días (estado de recuperación) ─────
   Future<Map<String, dynamic>> getHrvBaseline() async {
     final r = await _dio.get('/athlete/hrv-baseline');
