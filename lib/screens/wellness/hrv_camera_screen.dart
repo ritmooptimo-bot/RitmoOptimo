@@ -8,6 +8,7 @@ import '../../config/skins/skin_config.dart';
 import '../../core/audio/soft_chime.dart';
 import '../../core/hrv/hrv_references.dart';
 import '../../core/hrv/hrv_info_sheet.dart';
+import '../../core/hrv/hrv_scroll_body.dart';
 import '../../core/network/api_client.dart';
 
 // ── Medición de FC/HRV matutino por PPG ──────────────────────────
@@ -24,7 +25,8 @@ class HrvCameraScreen extends ConsumerStatefulWidget {
 
 class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
   static const int _durationSec = 45;
-  static const int _warmupMs = 4000; // descartar el arranque (dedo + auto-exposición)
+  static const int _warmupMs =
+      4000; // descartar el arranque (dedo + auto-exposición)
 
   CameraController? _cam;
   bool _initializing = true;
@@ -306,21 +308,24 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
             style: TextStyle(
                 color: skin.textPrimary, letterSpacing: 2, fontSize: 14)),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: _error != null
-            ? _center(skin, Icons.videocam_off_rounded, _error!)
-            : _initializing
-                ? Center(child: CircularProgressIndicator(color: skin.accent))
-                : _done
-                    ? _result(skin)
-                    : _live(skin),
-      ),
+      // Con scroll SIEMPRE salvo en la intro, que ya trae el suyo. El resultado
+      // es el que se salía: cuando la medición no sale limpia el aviso crece y
+      // empujaba fuera de pantalla USAR VALORES y Repetir.
+      body: _error != null
+          ? HrvScrollBody(
+              child: _center(skin, Icons.videocam_off_rounded, _error!))
+          : _initializing
+              ? Center(child: CircularProgressIndicator(color: skin.accent))
+              : _done
+                  ? HrvScrollBody(child: _result(skin))
+                  : _measuring
+                      ? HrvScrollBody(child: _measuringView(skin))
+                      : Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: _introView(skin),
+                        ),
     );
   }
-
-  Widget _live(SkinConfig skin) =>
-      _measuring ? _measuringView(skin) : _introView(skin);
 
   // ── Intro: guía visual en 3 pasos + botón ──────────────────────
   Widget _introView(SkinConfig skin) {
@@ -358,7 +363,8 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
                 skin,
                 '2',
                 'Tápala con la yema',
-                SizedBox(width: 92, height: 100, child: _fingerToCameraArt(skin)),
+                SizedBox(
+                    width: 92, height: 100, child: _fingerToCameraArt(skin)),
               ),
             ],
           ),
@@ -399,6 +405,7 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
   Widget _measuringView(SkinConfig skin) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(Icons.favorite, color: skin.error, size: 110),
         const SizedBox(height: 20),
@@ -520,6 +527,7 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
     final ok = _resultHr != null;
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(ok ? Icons.check_circle : Icons.error_outline,
             color: ok ? skin.success : skin.warning, size: 72),
@@ -537,8 +545,8 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
               _stat(skin, '$_resultHr', 'ppm (FC)', skin.error,
                   ref: _resultHr != null ? fcRestLabel(_resultHr!) : null),
               const SizedBox(width: 20),
-              _stat(skin, _resultHrv != null ? '$_resultHrv' : '—',
-                  'ms (HRV)', skin.accent),
+              _stat(skin, _resultHrv != null ? '$_resultHrv' : '—', 'ms (HRV)',
+                  skin.accent),
             ],
           ),
           const SizedBox(height: 6),
@@ -593,7 +601,8 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
             'Cubre por completo la cámara y el flash con el dedo, sin apretar '
             'demasiado, y mantente quieto. Vuelve a intentarlo.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: skin.textSecondary, fontSize: 14, height: 1.4),
+            style:
+                TextStyle(color: skin.textSecondary, fontSize: 14, height: 1.4),
           ),
           const SizedBox(height: 24),
           SizedBox(
@@ -602,8 +611,8 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
             child: ElevatedButton(
               onPressed: () => setState(() => _done = false),
               child: const Text('REINTENTAR',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700, letterSpacing: 2)),
+                  style:
+                      TextStyle(fontWeight: FontWeight.w700, letterSpacing: 2)),
             ),
           ),
         ],
@@ -715,6 +724,7 @@ class _HrvCameraScreenState extends ConsumerState<HrvCameraScreen> {
   Widget _center(SkinConfig skin, IconData icon, String text) => Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, color: skin.textMuted, size: 56),
             const SizedBox(height: 16),
@@ -747,8 +757,7 @@ class _HandPainter extends CustomPainter {
     canvas.rotate(-0.85);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(
-            center: Offset.zero, width: w * 0.17, height: h * 0.36),
+        Rect.fromCenter(center: Offset.zero, width: w * 0.17, height: h * 0.36),
         Radius.circular(w * 0.09),
       ),
       p,

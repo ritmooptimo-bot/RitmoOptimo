@@ -10,6 +10,7 @@ import '../../core/ble/ble_service.dart';
 import '../../core/hrv/hrv_analysis.dart';
 import '../../core/hrv/hrv_references.dart';
 import '../../core/hrv/hrv_info_sheet.dart';
+import '../../core/hrv/hrv_scroll_body.dart';
 import '../../core/network/api_client.dart';
 
 // ── Medición de HRV/FC con BANDA DE PECHO (BLE) ──────────────────────
@@ -43,7 +44,8 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
   int _elapsed = 0; // segundos transcurridos
   int _hrLive = 0;
   int _cleanBeats = 0; // latidos limpios acumulados (progreso en vivo)
-  final List<int> _hrSamples = []; // FC que reporta la banda (referencia fiable)
+  final List<int> _hrSamples =
+      []; // FC que reporta la banda (referencia fiable)
 
   HrvResult? _result; // análisis final (Lipponen-Tarvainen)
   bool _noSignal = false; // no llegó ningún R-R
@@ -68,8 +70,7 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
     try {
       // Si no hay banda conectada, abre la pantalla de escaneo (reutilizada).
       if (!_ble.isConnected) {
-        final device =
-            await context.push<BluetoothDevice?>('/ble-scan/hrv');
+        final device = await context.push<BluetoothDevice?>('/ble-scan/hrv');
         if (!mounted) return;
         if (device == null && !_ble.isConnected) {
           return; // el usuario canceló
@@ -77,7 +78,8 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _error = 'No se pudo conectar la banda. Inténtalo de nuevo.');
+        setState(
+            () => _error = 'No se pudo conectar la banda. Inténtalo de nuevo.');
       }
       return;
     }
@@ -174,8 +176,10 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
             style: TextStyle(
                 color: skin.textPrimary, letterSpacing: 2, fontSize: 14)),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
+      // Con scroll SIEMPRE: cuando la señal sale sucia el aviso pasa de una
+      // línea a cinco y empujaba fuera de pantalla los botones de USAR VALORES
+      // y Repetir — justo los que hacen falta cuando la medición sale mal.
+      body: HrvScrollBody(
         child: switch (_phase) {
           _Phase.intro => _introView(skin),
           _Phase.measuring => _measuringView(skin),
@@ -188,6 +192,7 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
   Widget _introView(SkinConfig skin) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(Icons.monitor_heart_outlined, color: skin.accent, size: 88),
         const SizedBox(height: 20),
@@ -203,7 +208,8 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
           'reales. Colócate la banda (humedece el electrodo), siéntate cómodo y '
           'quédate quieto y relajado ~1 minuto (se ajusta según la señal).',
           textAlign: TextAlign.center,
-          style: TextStyle(color: skin.textSecondary, fontSize: 14, height: 1.4),
+          style:
+              TextStyle(color: skin.textSecondary, fontSize: 14, height: 1.4),
         ),
         if (_error != null) ...[
           const SizedBox(height: 16),
@@ -231,6 +237,7 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
     final progress = (_cleanBeats / _targetBeats).clamp(0.0, 1.0);
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(Icons.favorite, color: skin.error, size: 110),
         const SizedBox(height: 20),
@@ -276,6 +283,7 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
     if (!hasHr) {
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.error_outline, color: skin.warning, size: 72),
           const SizedBox(height: 16),
@@ -301,8 +309,8 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
             child: ElevatedButton(
               onPressed: () => setState(() => _phase = _Phase.intro),
               child: const Text('REINTENTAR',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700, letterSpacing: 2)),
+                  style:
+                      TextStyle(fontWeight: FontWeight.w700, letterSpacing: 2)),
             ),
           ),
         ],
@@ -325,6 +333,7 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
     };
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(showHrv ? Icons.check_circle : Icons.info_outline,
             color: showHrv ? skin.success : skin.warning, size: 64),
@@ -358,7 +367,8 @@ class _HrvBandScreenState extends ConsumerState<HrvBandScreen> {
         const SizedBox(height: 6),
         Text(msg,
             textAlign: TextAlign.center,
-            style: TextStyle(color: skin.textMuted, fontSize: 12, height: 1.35)),
+            style:
+                TextStyle(color: skin.textMuted, fontSize: 12, height: 1.35)),
         const SizedBox(height: 24),
         SizedBox(
           width: double.infinity,
