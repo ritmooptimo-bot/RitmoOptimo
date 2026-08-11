@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../../providers/skin_provider.dart';
+import '../../models/ejercicio.dart';
+import 'fuerza_session_screen.dart';
 import '../../providers/workout_provider.dart';
 import '../../config/skins/skin_config.dart';
 import '../../core/network/api_client.dart';
@@ -251,6 +253,36 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     }
   }
 
+  /// Guarda una sesión de FUERZA: lo que de verdad hizo, serie a serie.
+  ///
+  /// Va a `actual_structure` (que ya existía, migración 040) porque es el sitio
+  /// donde vive "lo real" frente a "lo planificado". De ahí saldrá el historial
+  /// —"la última vez: 3×10 con 22 kg"— que es lo que permite progresar.
+  ///
+  /// La carga y la adherencia NO se mandan: las calcula el servidor desde el
+  /// 11/08. Mandarlas desde aquí sería volver a dejar en el cliente un dato del
+  /// que depende saber si el plan funcionó.
+  Future<void> _guardarFuerza(List<Map<String, dynamic>> realizado) async {
+    final id = widget.sessionId;
+    final minutos = (ref.read(activeSessionProvider).elapsedSeconds / 60).round();
+    try {
+      await ref.read(apiClientProvider).completeSession(id, {
+        'actualDurationMin': minutos > 0 ? minutos : null,
+        'structure': ref.read(activeSessionProvider).session?['structure'],
+        'athleteFeedback': {'series_realizadas': realizado},
+      });
+      if (!mounted) return;
+      context.go('/session/$id/complete');
+    } catch (e) {
+      if (!mounted) return;
+      // El entrenamiento ya está hecho: lo que NO puede pasar es que se pierda
+      // en silencio y el deportista crea que se ha guardado.
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('No se pudo guardar. Revisa la conexión e inténtalo otra vez.'),
+        backgroundColor: ref.read(activeSkinProvider).error));
+    }
+  }
+
   Future<void> _onFinish() async {
     final skin    = ref.read(activeSkinProvider);
     final elapsed = ref.read(activeSessionProvider).elapsedSeconds;
@@ -456,6 +488,26 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final sessionStatus  = session.session?['status'] as String? ?? '';
     final isCompleted    = !_loadingSession && sessionStatus == 'completed' && !session.isRunning;
     final isPreStart     = !_loadingSession && !session.isRunning && !isCompleted;
+
+    // ── FUERZA: otra pantalla, porque es otro entrenamiento ──────────────
+    //
+    // Esta pantalla está construida sobre GPS, ritmo y frecuencia cardiaca. Para
+    // una sentadilla nada de eso significa nada: lo que hace falta es saber qué
+    // ejercicio toca, por qué serie vas y cuánto queda de descanso.
+    //
+    // ⚠️ La decisión NO se toma por `session_type`, sino por si la sesión TRAE
+    // ejercicios. Es la diferencia entre preguntar por la etiqueta y preguntar
+    // por el contenido: una sesión de fuerza antigua (de las que eran un párrafo)
+    // sigue abriendo la pantalla de siempre, y una de otro tipo que traiga
+    // ejercicios se guía bien igualmente.
+    if (!_loadingSession && session.session != null &&
+        !isCompleted &&
+        BloqueFuerza.desdeEstructura(session.session!['structure']).isNotEmpty) {
+      return FuerzaSessionScreen(
+        session: session.session!,
+        onFinish: (realizado) => _guardarFuerza(realizado),
+      );
+    }
 
     return Scaffold(
       backgroundColor: skin.background,
