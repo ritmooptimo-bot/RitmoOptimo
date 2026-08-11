@@ -5,6 +5,7 @@ import '../../providers/skin_provider.dart';
 import '../../config/skins/skin_config.dart';
 import '../../core/audio/soft_chime.dart';
 import '../../models/ejercicio.dart';
+import '../../core/network/api_client.dart';
 
 /// Sesión de FUERZA guiada, serie a serie.
 ///
@@ -23,7 +24,15 @@ class FuerzaSessionScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> session;
   final Future<void> Function(List<Map<String, dynamic>> realizado)? onFinish;
 
-  const FuerzaSessionScreen({super.key, required this.session, this.onFinish});
+  /// De dónde sale el historial ("la última vez: 3×10 con 22 kg").
+  ///
+  /// Se inyecta en vez de llamar directamente al cliente para que la pantalla
+  /// se pueda probar SIN red — y, sobre todo, para poder probar cómo se LEE el
+  /// historial, que es lo que de verdad importa comprobar aquí.
+  final Future<Map<String, dynamic>> Function(List<String> slugs)? cargarHistorial;
+
+  const FuerzaSessionScreen({super.key, required this.session, this.onFinish,
+                             this.cargarHistorial});
 
   @override
   ConsumerState<FuerzaSessionScreen> createState() => _FuerzaSessionScreenState();
@@ -41,11 +50,25 @@ class _FuerzaSessionScreenState extends ConsumerState<FuerzaSessionScreen> {
   /// permite saber si progresa.
   final List<Map<String, dynamic>> _hecho = [];
 
+  /// La última vez que hizo cada ejercicio. Llega después de pintar: la sesión
+  /// tiene que poder empezar aunque el historial tarde o falle.
+  Map<String, dynamic> _historial = const {};
+
   @override
   void initState() {
     super.initState();
     _pasos = PasoSerie.desdeBloques(
         BloqueFuerza.desdeEstructura(widget.session['structure']));
+    _cargarHistorial();
+  }
+
+  Future<void> _cargarHistorial() async {
+    final slugs = _pasos.map((p) => p.ejercicio.slug).toSet().toList();
+    if (slugs.isEmpty) return;
+    final traer = widget.cargarHistorial ??
+        (s) => ref.read(apiClientProvider).getExerciseHistory(s);
+    final h = await traer(slugs);
+    if (mounted) setState(() => _historial = h);
   }
 
   @override
@@ -117,6 +140,7 @@ class _FuerzaSessionScreenState extends ConsumerState<FuerzaSessionScreen> {
                       onSaltar: _saltarDescanso)
           else
             _Ejercicio(skin: skin, paso: _paso!, siguiente: _siguiente,
+                       ultimaVez: _historial[_paso!.ejercicio.slug] as Map<String, dynamic>?,
                        onHecha: _registrarYDescansar),
         ],
       ),
@@ -154,10 +178,36 @@ class _Ejercicio extends StatelessWidget {
   final SkinConfig skin;
   final PasoSerie paso;
   final PasoSerie? siguiente;
+  final Map<String, dynamic>? ultimaVez;
   final void Function({int? reps, int? tiempoS}) onHecha;
 
   const _Ejercicio({required this.skin, required this.paso,
-                    required this.siguiente, required this.onHecha});
+                    required this.siguiente, required this.onHecha,
+                    this.ultimaVez});
+
+  /// "La última vez: 3×10 · 22 kg · hace 6 días"
+  ///
+  /// Sin fecha no vale: "3×10 con 22 kg" de hace tres meses no es una
+  /// referencia, es un recuerdo — y compararse con ella induce a error.
+  String? get _resumenUltimaVez {
+    final u = ultimaVez;
+    if (u == null) return null;
+    final series = u['series'];
+    final cuanto = u['reps'] != null ? '$series×${u['reps']}'
+                 : u['tiempo_s'] != null ? '$series×${u['tiempo_s']}s'
+                 : '$series series';
+    final c = u['carga'] as Map?;
+    final carga = c == null || c['tipo'] == 'peso_corporal' ? null
+                : c['tipo'] == 'kg'    ? '${c['valor']} kg'
+                : c['tipo'] == 'rir'   ? 'RIR ${c['valor']}'
+                : c['tipo'] == 'rpe'   ? 'RPE ${c['valor']}/10'
+                : c['tipo'] == 'banda' ? 'banda ${c['valor']}'
+                : '${c['valor']}';
+    final d = u['hace_dias'] as int?;
+    final cuando = d == null ? null
+                 : d <= 0 ? 'hoy' : d == 1 ? 'ayer' : 'hace $d días';
+    return [cuanto, carga, cuando].whereType<String>().join('  ·  ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -210,6 +260,20 @@ class _Ejercicio extends StatelessWidget {
           ],
         ]),
       ),
+
+      // ⚠️ EL HISTORIAL ES LO QUE MÁS ENGANCHA de una app de fuerza, y no es
+      // decoración: sin él el deportista no sabe si progresa. Levantar 22 kg no
+      // significa nada; levantar 22 donde la semana pasada levantaste 20, sí.
+      // Va justo debajo del objetivo, que es donde se compara.
+      if (_resumenUltimaVez != null) ...[
+        const SizedBox(height: 12),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.history, size: 16, color: skin.textMuted),
+          const SizedBox(width: 8),
+          Expanded(child: Text('La última vez: ${_resumenUltimaVez!}',
+              style: TextStyle(color: skin.textMuted, fontSize: 13))),
+        ]),
+      ],
 
       if ((e.nota ?? '').isNotEmpty) ...[
         const SizedBox(height: 14),

@@ -137,6 +137,24 @@ class ApiClient {
     return (r.data as Map<String, dynamic>)['coach_name'] as String?;
   }
 
+  /// La ÚLTIMA vez que hizo cada uno de estos ejercicios.
+  ///
+  /// Es lo que convierte una lista de ejercicios en un entrenamiento con
+  /// sentido: levantar 22 kg no dice nada; levantar 22 donde la semana pasada
+  /// levantaste 20, sí. Si falla, se devuelve vacío — el historial es un extra,
+  /// nunca puede impedir entrenar.
+  Future<Map<String, dynamic>> getExerciseHistory(List<String> slugs) async {
+    if (slugs.isEmpty) return const {};
+    try {
+      final r = await _dio.get('/athlete/exercise-history',
+          queryParameters: {'slugs': slugs.join(',')});
+      final h = (r.data as Map<String, dynamic>)['history'];
+      return h is Map ? Map<String, dynamic>.from(h) : const {};
+    } catch (_) {
+      return const {};
+    }
+  }
+
   /// SU EQUIPO: cada profesional con su nombre y su especialidad.
   ///
   /// Lo que se vende no es "una IA que entrena": es el criterio de

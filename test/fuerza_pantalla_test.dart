@@ -24,12 +24,18 @@ void main() {
     ],
   };
 
+  const historial = <String, dynamic>{};
+
   Widget app({double escala = 1.0, Size tam = const Size(360, 640)}) =>
       ProviderScope(
         child: MaterialApp(
           home: MediaQuery(
             data: MediaQueryData(size: tam, textScaler: TextScaler.linear(escala)),
-            child: FuerzaSessionScreen(session: sesion),
+            child: FuerzaSessionScreen(
+              session: sesion,
+              // Sin red en las pruebas: el historial se inyecta.
+              cargarHistorial: (_) async => historial,
+            ),
           ),
         ),
       );
@@ -108,3 +114,4 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 }
+
