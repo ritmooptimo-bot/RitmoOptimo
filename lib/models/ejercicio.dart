@@ -27,6 +27,14 @@ class Ejercicio {
   final String? cargaTipo;   // kg · rir · rpe · %1rm · banda · peso_corporal
   final dynamic cargaValor;
 
+  /// ⚠️ EL KILO NO MANDA SOBRE LA SENSACIÓN.
+  ///
+  /// Cuando el peso sale del e1RM, viaja con el RIR que pretendía: "90 kg,
+  /// dejándote 2". Un peso fijo no sabe que hoy has dormido cinco horas; el RIR
+  /// sí. Enseñar solo el número convierte una guía en una orden, y alguien
+  /// acabará haciendo la última repetición con la espalda.
+  final int? rirGuia;
+
   final String? nota;
   final bool    unilateral;
 
@@ -50,6 +58,7 @@ class Ejercicio {
     this.nota,
     this.unilateral = false,
     this.pideRir = false,
+    this.rirGuia,
   });
 
   static int? _int(dynamic v) =>
@@ -66,6 +75,7 @@ class Ejercicio {
       descansoS: _int(j['descanso_s'] ?? j['descansoS']) ?? 60,
       cargaTipo:  carga is Map ? carga['tipo']?.toString() : null,
       cargaValor: carga is Map ? carga['valor'] : null,
+      rirGuia:    carga is Map ? _int(carga['rir_guia']) : null,
       nota: (j['nota'] ?? j['indicaciones'])?.toString(),
       unilateral: j['unilateral'] == true,
       pideRir: j['pide_rir'] == true,
@@ -78,6 +88,14 @@ class Ejercicio {
     if (reps != null) return unilateral ? '$reps reps por lado' : '$reps reps';
     return '—';
   }
+
+  /// Lo que acompaña al peso cuando el peso sale de una estimación: "deja 2 en
+  /// recámara". Solo aparece con kilos calculados — en un RIR sería repetir lo
+  /// mismo dos veces.
+  String? get guia =>
+      (cargaTipo == 'kg' && rirGuia != null)
+          ? (rirGuia == 0 ? 'hasta donde llegues' : 'deja $rirGuia en recámara')
+          : null;
 
   /// "RIR 2" · "20 kg" · null si va con el propio peso.
   String? get carga {

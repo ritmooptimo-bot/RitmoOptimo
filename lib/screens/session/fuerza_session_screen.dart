@@ -349,6 +349,17 @@ class _Ejercicio extends StatelessWidget {
                 style: TextStyle(color: skin.accent, fontSize: 17,
                     fontWeight: FontWeight.w700)),
           ],
+          // ⚠️ Y con los kilos, SIEMPRE la guía. El peso sale de una estimación
+          // y no sabe que hoy has dormido cinco horas; el RIR sí. Sin esta
+          // línea, "90 kg" se lee como una orden y alguien acaba haciendo la
+          // última repetición con la espalda. Debajo y en gris: es la letra
+          // pequeña del número, no otro número.
+          if (e.guia != null) ...[
+            const SizedBox(height: 4),
+            Text(e.guia!,
+                style: TextStyle(color: skin.textMuted, fontSize: 13,
+                    fontStyle: FontStyle.italic)),
+          ],
         ]),
       ),
 
