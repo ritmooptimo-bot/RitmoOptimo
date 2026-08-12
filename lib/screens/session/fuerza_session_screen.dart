@@ -78,7 +78,7 @@ class _FuerzaSessionScreenState extends ConsumerState<FuerzaSessionScreen> {
   PasoSerie? get _siguiente => _i + 1 < _pasos.length ? _pasos[_i + 1] : null;
   bool get _terminada => _i >= _pasos.length;
 
-  void _registrarYDescansar({int? reps, int? tiempoS}) {
+  void _registrarYDescansar({int? reps, int? tiempoS, int? rirDeclarado}) {
     final p = _paso;
     if (p == null) return;
     _hecho.add({
@@ -89,6 +89,9 @@ class _FuerzaSessionScreenState extends ConsumerState<FuerzaSessionScreen> {
       'tiempo_s': tiempoS ?? p.ejercicio.tiempoS,
       if (p.ejercicio.cargaTipo != null)
         'carga': {'tipo': p.ejercicio.cargaTipo, 'valor': p.ejercicio.cargaValor},
+      // ⚠️ Solo va si ÉL lo ha dicho. Sin esta clave, el servidor NO estima:
+      // el RIR prescrito es lo que le pedimos, no lo que sintió.
+      if (rirDeclarado != null) 'rir_declarado': rirDeclarado,
       'ts': DateTime.now().toIso8601String(),
     });
 
@@ -148,6 +151,94 @@ class _FuerzaSessionScreenState extends ConsumerState<FuerzaSessionScreen> {
   }
 }
 
+/// La pregunta que hace posible el e1RM: **cuántas te sobraban**.
+///
+/// ⚠️ SOLO en los ejercicios con e1RM. Hasta ahora se guardaba el RIR PRESCRITO
+/// —le pedimos 2 y anotábamos 2— y estimar un máximo con eso es calcular sobre
+/// un número que nadie ha medido. Es la misma familia que el bienestar con un 2
+/// que nadie rellenó.
+///
+/// De UN TOQUE, con las opciones ya puestas y en el lenguaje del deportista
+/// ("ninguna más", "una o dos"), no con la palabra RIR. Si esto fuera un
+/// formulario se dejaría de contestar en dos sesiones y volveríamos a no tener
+/// el dato — que es peor que no preguntarlo.
+///
+/// Se puede cerrar sin contestar: entonces esa serie no produce estimación y ya
+/// está. Obligar a responder para poder seguir entrenando sería castigar al
+/// deportista por no querer darnos un dato.
+Future<int?> preguntarRir(BuildContext context, SkinConfig skin, String ejercicio) {
+  // Cinco opciones y ninguna más: la lista tiene que caber de un vistazo entre
+  // serie y serie. Etiquetas de una línea a propósito — con subtítulo no cabía
+  // ni a letra normal y había que hacer scroll para contestar, que es la mejor
+  // forma de que se deje de contestar.
+  //
+  // La última ("Cuatro o más") es honesta pero NO produce estimación: por
+  // encima de RIR 3 las fórmulas se van, y el servidor la descarta. Se guarda
+  // igual: que se descarte para estimar no la convierte en un dato falso.
+  const opciones = <(int, String)>[
+    (0, 'Ninguna más'),
+    (1, 'Una'),
+    (2, 'Dos'),
+    (3, 'Tres'),
+    (5, 'Cuatro o más'),
+  ];
+  return showModalBottomSheet<int>(
+    context: context,
+    backgroundColor: skin.backgroundCard,
+    isScrollControlled: true,
+    // Nunca a pantalla completa: al 180 % la hoja se comía la pantalla entera y
+    // dejaba de verse que estabas en mitad de una serie — y sin hueco arriba
+    // tampoco se podía cerrar tocando fuera.
+    constraints: BoxConstraints(
+      maxHeight: MediaQuery.of(context).size.height * 0.78),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => SafeArea(
+      // Scroll: cinco opciones con la letra del sistema al 180 % no caben en
+      // media pantalla, y un Column recortaría la última sin avisar.
+      child: ListView(
+        key: const Key('hoja_rir'),
+        shrinkWrap: true,
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+        children: [
+          Text('¿Cuántas repeticiones más podrías haber hecho?',
+              style: TextStyle(color: skin.textPrimary, fontSize: 19,
+                  fontWeight: FontWeight.w700, height: 1.2)),
+          const SizedBox(height: 4),
+          Text(ejercicio,
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: skin.textMuted, fontSize: 13)),
+          const SizedBox(height: 14),
+          for (final o in opciones)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: InkWell(
+                onTap: () => Navigator.of(ctx).pop(o.$1),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: skin.textMuted.withValues(alpha: 0.25)),
+                  ),
+                  child: Text(o.$2,
+                      style: TextStyle(color: skin.textPrimary,
+                          fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Ahora no',
+                style: TextStyle(color: skin.textMuted)),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 // ── Cuánto llevas ──────────────────────────────────────────────────────
 class _Progreso extends StatelessWidget {
   final SkinConfig skin; final int hechas; final int total;
@@ -179,7 +270,7 @@ class _Ejercicio extends StatelessWidget {
   final PasoSerie paso;
   final PasoSerie? siguiente;
   final Map<String, dynamic>? ultimaVez;
-  final void Function({int? reps, int? tiempoS}) onHecha;
+  final void Function({int? reps, int? tiempoS, int? rirDeclarado}) onHecha;
 
   const _Ejercicio({required this.skin, required this.paso,
                     required this.siguiente, required this.onHecha,
@@ -289,7 +380,14 @@ class _Ejercicio extends StatelessWidget {
       SizedBox(
         width: double.infinity, height: 56,
         child: ElevatedButton(
-          onPressed: () => onHecha(),
+          onPressed: () async {
+            // En los ejercicios con e1RM se le pregunta cuánto le sobraba: es
+            // lo único que convierte una serie registrada en un dato que sirve
+            // para saber cuánto levanta. En el resto, un toque y a descansar.
+            if (!paso.ejercicio.pideRir) { onHecha(); return; }
+            final rir = await preguntarRir(context, skin, paso.ejercicio.nombre);
+            onHecha(rirDeclarado: rir);   // null = no contestó: no se estima
+          },
           child: const FittedBox(
             fit: BoxFit.scaleDown,
             child: Text('SERIE HECHA', maxLines: 1,

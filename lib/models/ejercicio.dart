@@ -30,6 +30,14 @@ class Ejercicio {
   final String? nota;
   final bool    unilateral;
 
+  /// ⚠️ ¿Hay que preguntarle cuánto le sobraba al terminar?
+  ///
+  /// Solo en los ejercicios con e1RM. El RIR que guardábamos era el PRESCRITO
+  /// —le pedimos 2 y anotábamos 2— y estimar el máximo con eso es calcular sobre
+  /// un número que nadie ha medido. Preguntarlo en los diez ejercicios de la
+  /// sesión sería un interrogatorio y dejaría de contestarse; en dos, se hace.
+  final bool    pideRir;
+
   const Ejercicio({
     required this.slug,
     required this.nombre,
@@ -41,6 +49,7 @@ class Ejercicio {
     this.cargaValor,
     this.nota,
     this.unilateral = false,
+    this.pideRir = false,
   });
 
   static int? _int(dynamic v) =>
@@ -59,6 +68,7 @@ class Ejercicio {
       cargaValor: carga is Map ? carga['valor'] : null,
       nota: (j['nota'] ?? j['indicaciones'])?.toString(),
       unilateral: j['unilateral'] == true,
+      pideRir: j['pide_rir'] == true,
     );
   }
 
