@@ -1,6 +1,7 @@
 import 'audio_cue_service.dart';
 import 'medidor_bloques.dart';
 import '../utils/zona_fc.dart';
+import '../session/aviso_zona.dart';
 
 // Tipos de bloque que se interpretan como intervalos/series
 const _kIntervalTypes = {'intervals', 'series', 'interval', 'fartlek', 'repeticiones', 'hiit'};
@@ -24,6 +25,12 @@ class BlockInfo {
   final int?   repDistanceM;
   final int    recoverySeconds;
 
+  /// ⚠️ De qué escala habla `zone`. Sin esto, un bloque `R1` de Raúl —que es
+  /// PERCEPCIÓN, «sin reloj ni pulsómetro»— se trataría como si fuera la zona 1
+  /// de frecuencia cardiaca, y le avisaríamos por pulsaciones en una sesión que
+  /// por método no se mide con ellas. Ver migración 090.
+  final String zoneEscala;
+
   const BlockInfo({
     required this.index,
     required this.label,
@@ -38,6 +45,7 @@ class BlockInfo {
     this.repDurationSeconds,
     this.repDistanceM,
     this.recoverySeconds  = 90,
+    this.zoneEscala       = 'desconocida',
   });
 
   static BlockInfo fromMap(int index, Map<String, dynamic> b) {
@@ -49,6 +57,7 @@ class BlockInfo {
     final durMin  = _parseDouble(b['min'] ?? b['durationMin'] ?? b['duracion_min'] ??
                                  b['duration_min'] ?? b['dur_min']) ?? 0.0;
     final zoneRaw = b['zone'] ?? b['zona_fc'] ?? b['hr_zone'] ?? b['zona'];
+    final escala  = (b['zone_escala'] ?? 'desconocida').toString();
     final paceRaw = b['ritmo_objetivo'] ?? b['target_pace'] ?? b['pace'];
     final isInt   = _kIntervalTypes.contains(typeRaw);
 
@@ -82,6 +91,7 @@ class BlockInfo {
       repDurationSeconds: repDurSec,
       repDistanceM:       repDistM,
       recoverySeconds:    recSec,
+      zoneEscala:         escala,
     );
   }
 
@@ -228,9 +238,21 @@ class SessionAudioController {
   /// Lo que ha dado cada bloque. La pantalla lo envía al terminar la sesión.
   List<ResultadoBloque> get resultadosDeBloques => List.unmodifiable(_resultados);
 
+  /// Las zonas de FC del deportista, en pulsaciones. `null` = no se han podido
+  /// cargar (sin red, o sin FC máxima): entonces no se avisa de nada, que es lo
+  /// correcto — no se inventa un rango.
+  final List<RangoFc>? zonasFc;
+
+  /// Vibración corta al salirse. Se inyecta para poder probarlo sin plugin.
+  final void Function()? onVibrar;
+
+  AvisoZona _aviso = AvisoZona();
+
   SessionAudioController({
     required AudioCueService audio,
     required List<dynamic>   rawBlocks,
+    this.zonasFc,
+    this.onVibrar,
   })  : _audio = audio,
         blocks = List.generate(
           rawBlocks.length,
@@ -252,8 +274,39 @@ class SessionAudioController {
     _ultimaDistanciaM = distanceM;
     _medidor?.anota(elapsedSeg: elapsed, metrosTotales: distanceM, fc: hr);
 
+    // ⚠️ EL AVISO DE ZONA VA FUERA DEL `_busy`, y a propósito: si el controlador
+    // está hablando de otra cosa, el aviso NO se pierde — se queda pendiente y
+    // sale cuando pueda. Perderlo sería peor que retrasarlo.
+    _vigilarZona(elapsed, hr);
+
     if (_busy) return;
     _doTick(elapsed, distanceM: distanceM);
+  }
+
+  /// El objetivo de FC del bloque en curso, si es que se mide por pulsaciones.
+  ///
+  /// ⚠️ Devuelve null en cuanto la escala NO es de FC. Un bloque `R1` de Raúl es
+  /// percepción («sin reloj ni pulsómetro»): darle un rango de pulsaciones sería
+  /// inventarse una equivalencia que él no ha establecido.
+  RangoFc? _objetivoDelBloque() {
+    if (zonasFc == null || _blockIdx < 0 || _blockIdx >= blocks.length) return null;
+    final b = blocks[_blockIdx];
+    if (b.zoneEscala != 'fc' || b.zone == null) return null;
+    final z = zonasFc!.where((x) => x.nombre.startsWith('Z${b.zone}'));
+    return z.isEmpty ? null : z.first;
+  }
+
+  void _vigilarZona(int elapsed, int? hr) {
+    final objetivo = _objetivoDelBloque();
+    if (objetivo?.nombre != _aviso.objetivo?.nombre) {
+      // Bloque nuevo → objetivo nuevo, pero el TOPE de avisos NO se reinicia.
+      _aviso = _aviso.paraBloque(
+        objetivo: objetivo,
+        escala: objetivo == null ? 'desconocida' : 'fc');
+    }
+    final r = _aviso.tick(elapsed, hr);
+    if (r.vibrar) onVibrar?.call();
+    if (r.decir != null) _audio.speak(r.decir!);
   }
 
   /// Solicita avanzar al siguiente bloque (o finalizar la rep actual).

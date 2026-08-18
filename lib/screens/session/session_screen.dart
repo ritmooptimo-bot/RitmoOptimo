@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +16,7 @@ import '../../core/ble/ble_service.dart';
 import '../../core/gps/gps_service.dart';
 import '../../models/sport.dart';
 import '../../core/utils/zona_fc.dart';
+import '../../providers/zonas_fc_provider.dart';
 import 'voice_picker_sheet.dart';
 import '../../core/audio/audio_cue_service.dart';
 import '../../core/audio/session_audio_controller.dart';
@@ -68,9 +70,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   void _initAudioController() {
     final blocks = ref.read(activeSessionProvider).session?['planned_structure'] as List<dynamic>?;
     if (blocks != null && blocks.isNotEmpty && _audioController == null) {
+      // Las zonas en pulsaciones, si se han podido cargar. Si no, el aviso de
+      // zona simplemente no existe: nunca se inventa un rango.
+      final zonas = ref.read(zonasFcProvider).value;
       _audioController = SessionAudioController(
         audio: _audioCueService,
         rawBlocks: blocks,
+        zonasFc: zonas?.zonas,
+        onVibrar: () => HapticFeedback.mediumImpact(),
       );
     }
   }

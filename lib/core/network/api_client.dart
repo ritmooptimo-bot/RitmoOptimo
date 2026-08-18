@@ -168,6 +168,16 @@ class ApiClient {
     return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
+  /// SUS ZONAS DE FC, EN PULSACIONES, con la procedencia de la FC máxima.
+  ///
+  /// ⚠️ Estos rangos son de FRECUENCIA CARDIACA y no traducen la escala R del
+  /// entrenador, que es de percepción («sin reloj ni pulsómetro»). Quien los use
+  /// tiene que mirar antes el `zone_escala` del bloque.
+  Future<Map<String, dynamic>> getHrZones() async {
+    final r = await _dio.get('/athlete/hr-zones');
+    return (r.data as Map<String, dynamic>);
+  }
+
   // ── HRV vs línea base de 7 días (estado de recuperación) ─────
   Future<Map<String, dynamic>> getHrvBaseline() async {
     final r = await _dio.get('/athlete/hrv-baseline');
