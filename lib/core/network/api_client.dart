@@ -178,6 +178,16 @@ class ApiClient {
     return (r.data as Map<String, dynamic>);
   }
 
+  /// Qué pulsaciones son un "R1" PARA ESTE deportista.
+  ///
+  /// ⚠️ No es una fórmula: R1 no es Z1. Cada fila dice si el rango lo firmó el
+  /// entrenador o si sale de lo que el deportista suele hacer — y de eso depende
+  /// que la app le corrija o solo le describa.
+  Future<Map<String, dynamic>> getZoneEquivalence() async {
+    final r = await _dio.get('/athlete/zone-equivalence');
+    return (r.data as Map<String, dynamic>);
+  }
+
   // ── HRV vs línea base de 7 días (estado de recuperación) ─────
   Future<Map<String, dynamic>> getHrvBaseline() async {
     final r = await _dio.get('/athlete/hrv-baseline');

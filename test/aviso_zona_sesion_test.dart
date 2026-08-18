@@ -86,6 +86,8 @@ void main() {
     expect(avisos(m.v), isEmpty);
   });
 
+  _equivalencia();
+
   test('una hora entera fuera de zona no pasa del tope de la sesión', () {
     final m = montar([
       {'block': 'Parte principal', 'min': 60, 'zone': '2', 'zone_escala': 'fc'},
@@ -94,5 +96,69 @@ void main() {
       m.c.onTick(s, distanceM: s * 3, hr: 155);
     }
     expect(avisos(m.v).length, AvisoZona.maximoAvisos);
+  });
+}
+
+/// LA EQUIVALENCIA DEL DEPORTISTA — lo que hace posible avisar en un bloque R1.
+///
+/// ⚠️ Y la distinción que lo sostiene: con un rango OBSERVADO se le describe,
+/// con uno FIRMADO por el entrenador se le corrige. Si corre sus suaves
+/// demasiado fuerte, ordenarle sobre su propia costumbre le daría la razón.
+void _equivalencia() {
+  const observado = RangoFc(desde: 134, hasta: 151, nombre: 'R1',
+                            mandaElEntrenador: false);
+  const firmado = RangoFc(desde: 120, hasta: 135, nombre: 'R1',
+                          mandaElEntrenador: true);
+
+  List<String> correr(SessionAudioController c, int segs, int hr) {
+    for (var s = 0; s < segs; s++) {
+      c.onTick(s, distanceM: s * 3, hr: hr);
+    }
+    return <String>[];
+  }
+
+  test('con equivalencia OBSERVADA describe, no ordena', () {
+    final v = _VozFalsa();
+    final c = SessionAudioController(
+      audio: v, equivalencia: const [observado],
+      rawBlocks: [{'block': 'Rodaje', 'min': 40, 'zone': 'R1', 'zone_escala': 'percepcion'}]);
+    correr(c, 200, 165);
+    final dichos = v.dicho.where((t) => t.contains('165')).toList();
+    expect(dichos, isNotEmpty);
+    expect(dichos.first, contains('sueles ir entre 134 y 151'));
+    expect(dichos.first, isNot(contains('Afloja')));
+  });
+
+  test('con equivalencia FIRMADA por el entrenador sí corrige', () {
+    final v = _VozFalsa();
+    final c = SessionAudioController(
+      audio: v, equivalencia: const [firmado],
+      rawBlocks: [{'block': 'Rodaje', 'min': 40, 'zone': 'R1', 'zone_escala': 'percepcion'}]);
+    correr(c, 200, 165);
+    final dichos = v.dicho.where((t) => t.contains('165')).toList();
+    expect(dichos.first, contains('Afloja'));
+    expect(dichos.first, contains('120-135 ppm'));
+  });
+
+  test('SIN equivalencia, un bloque R1 sigue sin avisar de nada', () {
+    final v = _VozFalsa();
+    final c = SessionAudioController(
+      audio: v, equivalencia: const [],
+      rawBlocks: [{'block': 'Rodaje', 'min': 40, 'zone': 'R1', 'zone_escala': 'percepcion'}]);
+    correr(c, 600, 190);
+    expect(v.dicho.where((t) => t.contains('190')), isEmpty);
+  });
+
+  test('la equivalencia manda sobre el modelo genérico de zonas', () {
+    // El bloque dice zona 2 en escala de FC (Z2 = 107-125), pero la equivalencia
+    // del deportista para esa etiqueta dice otra cosa: gana la suya.
+    final v = _VozFalsa();
+    final c = SessionAudioController(
+      audio: v,
+      zonasFc: const [RangoFc(desde: 107, hasta: 125, nombre: 'Z2 Suave')],
+      equivalencia: const [RangoFc(desde: 150, hasta: 165, nombre: '2')],
+      rawBlocks: [{'block': 'Principal', 'min': 40, 'zone': '2', 'zone_escala': 'fc'}]);
+    correr(c, 200, 120);   // 120 está DENTRO de Z2 genérica, FUERA de la suya
+    expect(v.dicho.where((t) => t.contains('120')), isNotEmpty);
   });
 }

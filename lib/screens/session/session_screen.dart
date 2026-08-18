@@ -73,10 +73,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       // Las zonas en pulsaciones, si se han podido cargar. Si no, el aviso de
       // zona simplemente no existe: nunca se inventa un rango.
       final zonas = ref.read(zonasFcProvider).value;
+      // Y su equivalencia: lo que hace posible avisar en un bloque R1, que es
+      // percepción y no se traduce con una fórmula.
+      final equiv = ref.read(equivalenciaZonasProvider).value;
       _audioController = SessionAudioController(
         audio: _audioCueService,
         rawBlocks: blocks,
         zonasFc: zonas?.zonas,
+        equivalencia: equiv,
         onVibrar: () => HapticFeedback.mediumImpact(),
       );
     }

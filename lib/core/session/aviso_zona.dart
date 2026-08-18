@@ -48,7 +48,16 @@ class RangoFc {
   final int? hasta;
   final String nombre;
 
-  const RangoFc({required this.desde, this.hasta, this.nombre = ''});
+  /// ⚠️ ¿ESTE RANGO ES UNA ORDEN O UNA OBSERVACIÓN?
+  ///
+  /// Si lo ha firmado el entrenador, manda: se le puede decir «afloja, el
+  /// objetivo es 120-135». Si sale de lo que el deportista SUELE hacer, no: si
+  /// corre los suaves demasiado fuerte, ordenarle sobre su propia costumbre
+  /// consagraría el error. Entonces solo se le describe.
+  final bool mandaElEntrenador;
+
+  const RangoFc({required this.desde, this.hasta, this.nombre = '',
+                 this.mandaElEntrenador = true});
 
   bool contiene(int bpm) => bpm >= desde && (hasta == null || bpm <= hasta!);
 
@@ -94,7 +103,11 @@ class AvisoZona {
   EstadoZona get estado => _ultimoEstado;
 
   /// ¿Este bloque se puede vigilar por pulsaciones?
-  bool get aplica => escala == 'fc' && objetivo != null;
+  /// ⚠️ Ya no basta con que la escala sea de FC. Una etiqueta de PERCEPCIÓN
+  /// (R1) también se puede vigilar… pero solo si existe una equivalencia en
+  /// pulsaciones para ESE deportista (mig. 092). Sin equivalencia, no hay
+  /// rango: la escala de Raúl no se traduce con una fórmula.
+  bool get aplica => objetivo != null;
 
   /// Un segundo de sesión.
   ///
@@ -157,6 +170,15 @@ class AvisoZona {
   /// qué obliga a mirar el móvil, que es justo lo que se quiere evitar.
   String _frase(EstadoZona estado, int bpm, RangoFc r) {
     final zona = r.nombre.isEmpty ? '' : ' de ${r.nombre}';
+
+    // ⚠️ SIN FIRMA DEL ENTRENADOR NO SE ORDENA, SE DESCRIBE. El rango observado
+    // dice lo que suele hacer, no lo que debería hacer: mandarle sobre su propia
+    // costumbre sería darle la razón a base de repetírsela.
+    if (!r.mandaElEntrenador) {
+      return 'Vas a $bpm. En tus${zona.isEmpty ? '' : zona.replaceFirst(' de', '')} '
+             'sueles ir entre ${r.desde} y ${r.hasta ?? r.desde}.';
+    }
+
     return estado == EstadoZona.porEncima
         ? 'Vas a $bpm. Afloja: el objetivo$zona es ${r.texto}.'
         : 'Vas a $bpm. Puedes apretar: el objetivo$zona es ${r.texto}.';

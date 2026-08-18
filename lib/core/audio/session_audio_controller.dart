@@ -243,6 +243,11 @@ class SessionAudioController {
   /// correcto — no se inventa un rango.
   final List<RangoFc>? zonasFc;
 
+  /// Qué pulsaciones son un "R1" PARA ESTE deportista (mig. 092). Manda sobre
+  /// el modelo genérico de zonas: la escala del entrenador no se traduce con una
+  /// fórmula, se mide en él.
+  final List<RangoFc>? equivalencia;
+
   /// Vibración corta al salirse. Se inyecta para poder probarlo sin plugin.
   final void Function()? onVibrar;
 
@@ -252,6 +257,7 @@ class SessionAudioController {
     required AudioCueService audio,
     required List<dynamic>   rawBlocks,
     this.zonasFc,
+    this.equivalencia,
     this.onVibrar,
   })  : _audio = audio,
         blocks = List.generate(
@@ -289,9 +295,21 @@ class SessionAudioController {
   /// percepción («sin reloj ni pulsómetro»): darle un rango de pulsaciones sería
   /// inventarse una equivalencia que él no ha establecido.
   RangoFc? _objetivoDelBloque() {
-    if (zonasFc == null || _blockIdx < 0 || _blockIdx >= blocks.length) return null;
+    if (_blockIdx < 0 || _blockIdx >= blocks.length) return null;
     final b = blocks[_blockIdx];
-    if (b.zoneEscala != 'fc' || b.zone == null) return null;
+    if (b.zoneLabel == null || b.zoneEscala == 'desconocida') return null;
+
+    // 1) La EQUIVALENCIA de este deportista manda sobre todo: dice qué
+    //    pulsaciones son un "R1" para ÉL. No hay fórmula que lo sustituya —
+    //    R1 no es Z1: en los datos reales sale al 79 % de la máxima, o sea Z3.
+    final eq = equivalencia?.where(
+      (x) => x.nombre.toUpperCase() == b.zoneLabel!.toUpperCase().trim());
+    if (eq != null && eq.isNotEmpty) return eq.first;
+
+    // 2) Y si no la hay, solo queda el modelo de zonas cuando el bloque ya
+    //    venía en escala de FC. Una etiqueta de percepción SIN equivalencia no
+    //    se traduce: se calla.
+    if (b.zoneEscala != 'fc' || b.zone == null || zonasFc == null) return null;
     final z = zonasFc!.where((x) => x.nombre.startsWith('Z${b.zone}'));
     return z.isEmpty ? null : z.first;
   }
@@ -300,9 +318,7 @@ class SessionAudioController {
     final objetivo = _objetivoDelBloque();
     if (objetivo?.nombre != _aviso.objetivo?.nombre) {
       // Bloque nuevo → objetivo nuevo, pero el TOPE de avisos NO se reinicia.
-      _aviso = _aviso.paraBloque(
-        objetivo: objetivo,
-        escala: objetivo == null ? 'desconocida' : 'fc');
+      _aviso = _aviso.paraBloque(objetivo: objetivo, escala: 'fc');
     }
     final r = _aviso.tick(elapsed, hr);
     if (r.vibrar) onVibrar?.call();

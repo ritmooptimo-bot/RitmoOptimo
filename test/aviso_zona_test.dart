@@ -19,13 +19,32 @@ void main() {
   }
 
   group('cuándo NO se abre la boca', () {
-    test('en escala de percepción NO se avisa nunca, vaya como vaya', () {
-      // La escala R de Raúl es «sin reloj ni pulsómetro»: avisar por pulsaciones
-      // en un bloque R1 sería entrenar contra su método.
-      final a = AvisoZona(objetivo: z2, escala: 'percepcion');
+    test('SIN OBJETIVO no se avisa: es lo único que protege la escala R', () {
+      // ⚠️ ESTA REGLA CAMBIÓ AL LLEGAR LA EQUIVALENCIA (mig. 092), y conviene
+      // saber por qué. Antes se miraba la cadena 'percepcion' y se callaba
+      // siempre. Ahora una etiqueta R1 SÍ se puede vigilar… pero solo si existe
+      // una equivalencia en pulsaciones medida en ESE deportista.
+      //
+      // Así que lo que protege ya no es el nombre de la escala, es que no haya
+      // rango: sin equivalencia no hay objetivo, y sin objetivo no se abre la
+      // boca. Quién decide si hay rango es `_objetivoDelBloque()`, y eso se
+      // prueba en `aviso_zona_sesion_test.dart`.
+      final a = AvisoZona(objetivo: null, escala: 'percepcion');
       expect(a.aplica, isFalse);
       expect(correr(a, 0, 600, 190), isEmpty);
       expect(a.estado, EstadoZona.noAplica);
+    });
+
+    test('con equivalencia, una etiqueta de percepción sí se vigila', () {
+      final a = AvisoZona(
+        objetivo: const RangoFc(desde: 134, hasta: 151, nombre: 'R1',
+                                mandaElEntrenador: false),
+        escala: 'percepcion');
+      expect(a.aplica, isTrue);
+      final dicho = correr(a, 0, AvisoZona.persistenciaSeg + 1, 170);
+      expect(dicho.length, 1);
+      // Observada: describe, no ordena.
+      expect(dicho.first, contains('sueles ir entre 134 y 151'));
     });
 
     test('sin objetivo tampoco', () {
