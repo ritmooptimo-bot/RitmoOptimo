@@ -17,6 +17,52 @@
 //  cuánto lleva la sesión, cuánta distancia y a qué pulsaciones.
 // ============================================================
 
+/// Lo que ha dado UNA repetición de una serie.
+///
+/// ⚠️ POR QUÉ HACE FALTA. Antes esto era una clase privada con el tiempo y el
+/// ritmo, se usaba para decir «serie 2 completada» en voz alta y se tiraba. El
+/// entrenador recibía el agregado del bloque —«27 min, 130 ppm de media»— y con
+/// eso NO se puede saber si se cumplió el objetivo de la serie: puede haber
+/// hecho la primera perfecta y las dos últimas hundido, y la media sale igual
+/// de bonita que si las hubiera clavado todas.
+///
+/// Y sin pulsaciones por repetición no hay forma de ver lo que de verdad
+/// importa en una serie: la deriva. Si la FC sube de la primera a la última con
+/// el mismo ritmo, la dosis fue demasiado alta — y eso es una decisión de
+/// entrenador que ahora mismo no tiene datos para tomar.
+class ResultadoRepeticion {
+  final int numero;              // 1-based
+  final int deReps;
+  final int segundosPrevistos;   // 0 si la serie era por distancia
+  final int segundosReales;
+  final int metros;
+  final int? ritmoSegKm;
+  final int? fcMedia;
+  final int? fcMax;
+
+  const ResultadoRepeticion({
+    required this.numero,
+    required this.deReps,
+    required this.segundosPrevistos,
+    required this.segundosReales,
+    required this.metros,
+    this.ritmoSegKm,
+    this.fcMedia,
+    this.fcMax,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'n': numero,
+        'de': deReps,
+        'seg_previstos': segundosPrevistos,
+        'seg_reales': segundosReales,
+        'distance_m': metros,
+        'pace_sec_km': ritmoSegKm,
+        'hr_avg': fcMedia,
+        'hr_max': fcMax,
+      };
+}
+
 /// Lo que ha dado un bloque cuando se cierra.
 class ResultadoBloque {
   final int indice;            // 0-based
@@ -28,6 +74,10 @@ class ResultadoBloque {
   final int? fcMedia;
   final int? fcMax;
 
+  /// Vacía salvo en bloques de series. Es lo que permite al entrenador ver si
+  /// se cumplió el objetivo repetición a repetición, y no solo de media.
+  final List<ResultadoRepeticion> repeticiones;
+
   const ResultadoBloque({
     required this.indice,
     required this.etiqueta,
@@ -37,6 +87,7 @@ class ResultadoBloque {
     this.zona,
     this.fcMedia,
     this.fcMax,
+    this.repeticiones = const [],
   });
 
   /// Ritmo medio del bloque en segundos por km. Null si no dio para medirlo.
@@ -61,6 +112,8 @@ class ResultadoBloque {
         'pace_sec_km': ritmoSegPorKm,
         'hr_avg': fcMedia,
         'hr_max': fcMax,
+        if (repeticiones.isNotEmpty)
+          'repeticiones': repeticiones.map((r) => r.toJson()).toList(),
       };
 }
 
@@ -115,7 +168,8 @@ class MedidorBloque {
     }
   }
 
-  ResultadoBloque cerrar() => ResultadoBloque(
+  ResultadoBloque cerrar({List<ResultadoRepeticion> repeticiones = const []}) =>
+      ResultadoBloque(
         indice: indice,
         etiqueta: etiqueta,
         zona: zona,
@@ -124,6 +178,7 @@ class MedidorBloque {
         metros: metros,
         fcMedia: _fcCuenta > 0 ? (_fcSuma / _fcCuenta).round() : null,
         fcMax: _fcMax,
+        repeticiones: repeticiones,
       );
 }
 

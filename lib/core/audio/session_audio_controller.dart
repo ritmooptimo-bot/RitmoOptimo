@@ -240,7 +240,13 @@ class SessionAudioController {
   int _restStartElapsed  = 0;
   int _repStartElapsed   = 0;
   int _repStartDistM     = 0;
-  List<_RepResult> _repResults = [];
+  List<ResultadoRepeticion> _repResults = [];
+
+  // Las pulsaciones DE ESTA repetición. Se reinician en cada serie: la media
+  // del bloque entero no sirve para ver si la tercera se fue de vueltas.
+  int  _repFcSuma  = 0;
+  int  _repFcCuenta = 0;
+  int? _repFcMax;
 
   // Deduplicación: evita re-disparar el mismo cue en el mismo segundo
   final Set<String> _fired = {};
@@ -303,6 +309,15 @@ class SessionAudioController {
     // El medidor se alimenta SIEMPRE, aunque el controlador esté ocupado
     // hablando: si se saltara los ticks de los cues, el bloque perdería metros.
     _ultimaDistanciaM = distanceM;
+
+    // El pulso de la repetición en curso. Va aquí y no en el tick de la serie
+    // porque el tick solo corre en algunas fases, y una lectura perdida es un
+    // dato menos para decidir si la dosis fue la buena.
+    if (hr != null && hr > 0 && _phase == _Phase.intervalRepActive) {
+      _repFcSuma += hr;
+      _repFcCuenta++;
+      if (_repFcMax == null || hr > _repFcMax!) _repFcMax = hr;
+    }
     _medidor?.anota(elapsedSeg: elapsed, metrosTotales: distanceM, fc: hr);
 
     // ⚠️ EL AVISO DE ZONA VA FUERA DEL `_busy`, y a propósito: si el controlador
@@ -647,7 +662,12 @@ class SessionAudioController {
 
     // Se cierran las medidas de ESTE bloque antes de hablar: lo que se cuenta
     // es lo que se guarda, no dos cifras calculadas por caminos distintos.
-    final resultado = _medidor?.cerrar();
+    // ⚠️ LAS REPETICIONES VIAJAN CON EL BLOQUE. Antes se medían, se decían en
+    // voz alta («serie 2 completada, ritmo 4:35») y se tiraban: al entrenador
+    // le llegaba solo el agregado, y con una media no se puede saber si la
+    // primera fue perfecta y las dos últimas un desastre.
+    final resultado = _medidor?.cerrar(
+      repeticiones: blocks[_blockIdx].isInterval ? List.of(_repResults) : const []);
     if (resultado != null) _resultados.add(resultado);
     _medidor = null;
 
@@ -702,6 +722,7 @@ class SessionAudioController {
     _currentRep++;
     _repStartElapsed = elapsed;
     _repStartDistM   = distanceM;
+    _repFcSuma = 0; _repFcCuenta = 0; _repFcMax = null;
     final block      = blocks[_blockIdx];
     final total      = block.repCount ?? '?';
     await _audio.beepLong();
@@ -743,7 +764,16 @@ class SessionAudioController {
       summary += ' Tiempo: ${_fmtSec(repElapsed)}.';
     }
 
-    _repResults.add(_RepResult(elapsedSec: repElapsed, paceSecKm: achievedPace));
+    _repResults.add(ResultadoRepeticion(
+      numero:            _currentRep,
+      deReps:            block.repCount ?? _currentRep,
+      segundosPrevistos: block.repDurationSeconds ?? 0,
+      segundosReales:    repElapsed,
+      metros:            repDist > 0 ? repDist : 0,
+      ritmoSegKm:        achievedPace,
+      fcMedia:           _repFcCuenta > 0 ? (_repFcSuma / _repFcCuenta).round() : null,
+      fcMax:             _repFcMax,
+    ));
     await _audio.speak(summary);
     await Future.delayed(const Duration(milliseconds: 1500));
 
@@ -845,14 +875,10 @@ class SessionAudioController {
   }
 
   double? _avgRepPace() {
-    final paces = _repResults.where((r) => r.paceSecKm != null).map((r) => r.paceSecKm!).toList();
+    final paces = _repResults.where((r) => r.ritmoSegKm != null).map((r) => r.ritmoSegKm!).toList();
     if (paces.isEmpty) return null;
     return paces.reduce((a, b) => a + b) / paces.length;
   }
 }
 
-class _RepResult {
-  final int elapsedSec;
-  final int? paceSecKm;
-  const _RepResult({required this.elapsedSec, this.paceSecKm});
-}
+
