@@ -529,8 +529,15 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final estructuraFuerza = session.session?['planned_structure']
         ?? session.session?['structure'];
 
+    // ⚠️ SOLO CUANDO YA ESTÁ CORRIENDO. Sin `session.isRunning`, esta pantalla
+    // se abría EN CUANTO CARGABA la sesión: la de siempre —la que enseña lo que
+    // se va a hacer y deja elegir el pulsómetro— aparecía un instante y saltaba
+    // sola a la guía de ejercicios sin que nadie hubiera pulsado COMENZAR.
+    //
+    // El orden importa: primero se ve lo que toca y se decide si se pone la
+    // banda; solo después se entra a ejecutar.
     if (!_loadingSession && session.session != null &&
-        !isCompleted &&
+        !isCompleted && session.isRunning &&
         BloqueFuerza.desdeEstructura(estructuraFuerza).isNotEmpty) {
       return FuerzaSessionScreen(
         session: { ...session.session!, 'structure': estructuraFuerza },
