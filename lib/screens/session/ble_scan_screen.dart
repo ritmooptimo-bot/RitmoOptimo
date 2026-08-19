@@ -25,19 +25,34 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
   bool             _connecting = false;
   bool             _wideMode   = false; // true = busca todos los BLE, no solo HR
   String?          _errorMsg;
+  String?          _avisoBt;   // el aviso de apagar y encender el Bluetooth
+  String?          _ultimaId;  // la banda de siempre, para ponerla la primera
   StreamSubscription<List<ScanResult>>? _sub;
-
-  static const _scanSeconds = 20; // sincronizado con BleService.scan()
+  StreamSubscription<bool>?             _subBuscando;
 
   @override
   void initState() {
     super.initState();
+    // El estado de "buscando" lo dice el propio Bluetooth, no un temporizador.
+    // Antes era un `Future.delayed(20s)` fijo: si la búsqueda fallaba al
+    // arrancar, la ruedecita seguía girando veinte segundos igualmente y luego
+    // decía "Ningún sensor encontrado". Parecía que había buscado y no.
+    _subBuscando = ref.read(bleServiceProvider).buscando.listen((b) {
+      if (mounted) setState(() => _scanning = b);
+    });
+    _cargarUltima();
     _startScan();
+  }
+
+  Future<void> _cargarUltima() async {
+    final u = await ref.read(bleServiceProvider).ultimaBanda();
+    if (mounted && u != null) setState(() => _ultimaId = u.id);
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _subBuscando?.cancel();
     ref.read(bleServiceProvider).stopScan();
     super.dispose();
   }
@@ -50,41 +65,76 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
     }
 
     setState(() {
-      _scanning  = true;
-      _wideMode  = wide;
-      _results   = [];
-      _errorMsg  = null;
+      _wideMode = wide;
+      _results  = [];
+      _errorMsg = null;
+      _avisoBt  = null;
     });
 
-    _sub?.cancel();
+    await _sub?.cancel();
     final ble = ref.read(bleServiceProvider);
+    final r = await ble.buscar(ampliada: wide);
 
-    if (wide) {
-      // Modo amplio: todos los dispositivos BLE, el usuario elige cuál es su banda
-      FlutterBluePlus.startScan(timeout: const Duration(seconds: _scanSeconds));
-      _sub = FlutterBluePlus.scanResults.listen(
-        (results) => setState(() => _results = results),
-      );
-    } else {
-      _sub = ble.scan().listen(
-        (results) => setState(() => _results = results),
-      );
+    if (!mounted) return;
+
+    // ⚠️ EL CASO QUE EXPLICA "APAGA Y ENCIENDE EL BLUETOOTH".
+    // Android corta las búsquedas al pasar de cinco en treinta segundos, y lo
+    // hace SIN dar error: simplemente deja de encontrar cosas. Hasta ahora la
+    // pantalla decía "Ningún sensor encontrado" y quedabas tú a solas con la
+    // sospecha de que se había roto la banda.
+    if (!r.arrancada && r.espera > Duration.zero) {
+      setState(() => _avisoBt =
+          'Android ha bloqueado la búsqueda por repetirla muchas veces seguidas '
+          '(deja pasar 5 cada medio minuto). Espera ${r.espera.inSeconds} s y vuelve a '
+          'darle a Repetir.\n\nSi sigue sin aparecer: apaga y enciende el Bluetooth '
+          'del móvil — eso reinicia el contador de Android y lo desatasca.');
+      return;
+    }
+    if (!r.arrancada) {
+      setState(() => _errorMsg =
+          'No se pudo iniciar la búsqueda. Apaga y enciende el Bluetooth del móvil '
+          'y vuelve a intentarlo.');
+      return;
     }
 
-    // Sincronizado con el timeout del scan
-    Future.delayed(const Duration(seconds: _scanSeconds), () {
-      if (mounted) setState(() => _scanning = false);
+    _sub = ble.resultados.listen((results) {
+      if (!mounted) return;
+      final lista = [...results];
+      // La de siempre primero, y el resto por potencia de señal: la banda que
+      // llevas puesta es la que más fuerte llega, casi siempre.
+      lista.sort((a, b) {
+        final aEs = a.device.remoteId.str == _ultimaId;
+        final bEs = b.device.remoteId.str == _ultimaId;
+        if (aEs != bEs) return aEs ? -1 : 1;
+        return b.rssi.compareTo(a.rssi);
+      });
+      setState(() => _results = lista);
     });
   }
 
   Future<void> _onSelect(BluetoothDevice device) async {
-    setState(() { _connecting = true; _errorMsg = null; });
+    setState(() { _connecting = true; _errorMsg = null; _avisoBt = null; });
     try {
       final ble = ref.read(bleServiceProvider);
       await ble.stopScan();
-      await ble.connect(device);
+      final tieneFc = await ble.connect(device);
+
+      // Conectado, sí… ¿pero a algo que dé pulsaciones? Antes esto no se
+      // comprobaba: te dejaba entrar en la sesión con un altavoz conectado y
+      // "Esperando dato…" hasta el final del entrenamiento.
+      if (!tieneFc) {
+        await ble.disconnect();
+        if (!mounted) return;
+        setState(() {
+          _connecting = false;
+          _errorMsg   = 'Ese aparato se conecta, pero no envía frecuencia cardíaca: '
+                        'no es tu banda. Busca uno que salga con el corazón lleno.';
+        });
+        return;
+      }
       if (mounted) context.pop(device);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _connecting = false;
         _errorMsg   = 'No se pudo conectar. Comprueba que el sensor esté encendido y en rango.';
@@ -136,6 +186,38 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
                     ),
                   ),
 
+                // ── El aviso del Bluetooth ───────────────────
+                // No es un error de la app ni de la banda: es un tope de
+                // Android. Se explica entero, porque si no la conclusión
+                // natural es "esta app no funciona".
+                if (_avisoBt != null)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: skin.warning.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(skin.cardRadius),
+                      border: Border.all(
+                          color: skin.warning.withValues(alpha: 0.45)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.bluetooth_disabled,
+                            color: skin.warning, size: 20),
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Text(
+                            _avisoBt!,
+                            style: TextStyle(
+                                color: skin.warning, fontSize: 13, height: 1.35),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                 // ── Lista de dispositivos ────────────────────
                 Expanded(
                   child: _results.isEmpty
@@ -153,6 +235,8 @@ class _BleScanScreenState extends ConsumerState<BleScanScreen> {
                           itemBuilder: (_, i) => _DeviceCard(
                             result: _results[i],
                             skin: skin,
+                            esLaDeSiempre:
+                                _results[i].device.remoteId.str == _ultimaId,
                             onConnect: () => _onSelect(_results[i].device),
                           ),
                         ),
@@ -316,9 +400,13 @@ class _EmptyView extends StatelessWidget {
 class _DeviceCard extends StatelessWidget {
   final ScanResult result;
   final dynamic skin;
+  final bool esLaDeSiempre;
   final VoidCallback onConnect;
   const _DeviceCard(
-      {required this.result, required this.skin, required this.onConnect});
+      {required this.result,
+      required this.skin,
+      required this.esLaDeSiempre,
+      required this.onConnect});
 
   @override
   Widget build(BuildContext context) {
@@ -327,21 +415,66 @@ class _DeviceCard extends StatelessWidget {
         : 'Sensor sin nombre';
     final rssi = result.rssi;
 
+    // ⚠️ ¿ESTE APARATO DA PULSACIONES, O SOLO ESTÁ AHÍ? En modo ampliado salían
+    // TODOS los dispositivos BLE del vecindario —el reloj, los auriculares, la
+    // tele— y todos con el mismo corazón rojo al lado, como si todos fueran
+    // bandas. Así es imposible no equivocarse. Ahora el corazón lleno es solo
+    // para los que anuncian frecuencia cardíaca de verdad.
+    final daFc = result.advertisementData.serviceUuids
+        .any((g) => g.str.toLowerCase().contains('180d'));
+
+    // La señal, en cristiano: -60 dBm no le dice nada a nadie, pero "muy cerca"
+    // sí — y es lo que distingue la banda que llevas puesta de la del vecino.
+    final cerca = rssi >= -65
+        ? 'muy cerca'
+        : rssi >= -80 ? 'cerca' : 'lejos';
+
     return Container(
       decoration: BoxDecoration(
         color: skin.backgroundCard,
         borderRadius: BorderRadius.circular(skin.cardRadius),
-        border: Border.all(color: skin.border),
+        border: Border.all(
+            color: esLaDeSiempre ? skin.accent : skin.border,
+            width: esLaDeSiempre ? 1.6 : 1),
       ),
       child: ListTile(
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Icon(Icons.favorite, color: skin.error, size: 28),
-        title: Text(name,
-            style: TextStyle(
-                color: skin.textPrimary, fontWeight: FontWeight.w600)),
+        leading: Icon(daFc ? Icons.favorite : Icons.bluetooth,
+            color: daFc ? skin.error : skin.textMuted, size: 28),
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: skin.textPrimary, fontWeight: FontWeight.w600)),
+            ),
+            if (esLaDeSiempre) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: skin.accent.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text('LA TUYA',
+                    style: TextStyle(
+                        color: skin.accent,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5)),
+              ),
+            ],
+          ],
+        ),
         subtitle: Text(
-          '${rssi} dBm  ·  ${result.device.remoteId.str.length >= 8 ? result.device.remoteId.str.substring(0, 8) : result.device.remoteId.str}...',
+          daFc ? '$cerca  ·  envía frecuencia cardíaca'
+               : '$cerca  ·  no anuncia frecuencia cardíaca',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(color: skin.textMuted, fontSize: 11),
         ),
         trailing: ElevatedButton(

@@ -1,9 +1,39 @@
 import 'dart:async';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'limite_busquedas.dart';
 
 const _hrServiceUuid     = "0000180d-0000-1000-8000-00805f9b34fb";
 const _hrMeasurementUuid = "00002a37-0000-1000-8000-00805f9b34fb";
+
+// ⚠️ EL LÍMITE DE ANDROID QUE EXPLICA "APAGA Y ENCIENDE EL BLUETOOTH".
+//
+// Android permite **5 búsquedas cada 30 segundos** por aplicación. A partir de
+// ahí NO da error: deja de devolver resultados y se calla. Desde fuera parece
+// que la banda ha desaparecido o que el Bluetooth se ha estropeado, y lo único
+// que parece arreglarlo es apagar y encender el Bluetooth — porque eso resetea
+// el contador del sistema.
+//
+// Y esta pantalla lo pisaba con una facilidad enorme: busca al entrar, busca al
+// pulsar "Repetir", busca al pulsar "Ver todos", y vuelve a buscar cada vez que
+// se entra otra vez. Cinco en medio minuto es de lo más normal.
+//
+// Así que el tope se lleva AQUÍ, y cuando se llega se dice por qué y cuánto
+// falta, en vez de dejar al deportista mirando una lista vacía.
+const _maxBusquedas   = 5;
+const _ventanaLimite  = Duration(seconds: 30);
+
+/// Lo que pasó al intentar buscar. `espera` solo viene en `throttled`.
+class ResultadoBusqueda {
+  final bool     arrancada;
+  final Duration espera;
+  final String?  error;
+  const ResultadoBusqueda.ok()             : arrancada = true,  espera = Duration.zero, error = null;
+  const ResultadoBusqueda.throttled(this.espera) : arrancada = false, error = null;
+  const ResultadoBusqueda.fallo(this.error): arrancada = false, espera = Duration.zero;
+}
 
 class BleService {
   BluetoothDevice?    _device;
@@ -21,20 +51,88 @@ class BleService {
   bool    get isConnected         => _device?.isConnected ?? false;
   String? get connectedDeviceName => _device?.platformName;
 
+  // ── BÚSQUEDA ──────────────────────────────────────────────────────────
+  //
   // Scan filtrado por Heart Rate Service UUID (0x180D) durante 20 s.
-  // 20s necesarios para bandas Garmin (HRM-Pro Plus tarda en anunciar BLE
-  // cuando también transmite ANT+ a un reloj emparejado).
-  Stream<List<ScanResult>> scan() {
-    FlutterBluePlus.startScan(
-      withServices: [Guid(_hrServiceUuid)],
-      timeout: const Duration(seconds: 20),
-    );
-    return FlutterBluePlus.scanResults;
+  // 20 s son necesarios para bandas Garmin (la HRM-Pro Plus tarda en anunciar
+  // BLE cuando además está transmitiendo ANT+ a un reloj emparejado).
+  Stream<List<ScanResult>> get resultados => FlutterBluePlus.scanResults;
+  Stream<bool>             get buscando   => FlutterBluePlus.isScanning;
+
+  final _limite = LimiteBusquedas(maximo: _maxBusquedas, ventana: _ventanaLimite);
+
+  /// Cuánto hay que esperar para que Android acepte otra búsqueda.
+  /// `Duration.zero` = se puede buscar ya.
+  Duration esperaNecesaria() => _limite.espera(DateTime.now());
+
+  /// Arranca una búsqueda. `ampliada` = todos los dispositivos BLE, no solo los
+  /// que anuncian frecuencia cardíaca.
+  ///
+  /// ⚠️ ANTES ESTO NO SE ESPERABA (`FlutterBluePlus.startScan(...)` a pelo, sin
+  /// `await` y sin `try`). Si fallaba —y falla a menudo: búsqueda ya en curso,
+  /// permisos, adaptador ocupado— el error se perdía como excepción asíncrona
+  /// sin dueño: ni mensaje, ni log, ni pista. La pantalla se quedaba con la
+  /// ruedecita girando veinte segundos y luego "Ningún sensor encontrado".
+  Future<ResultadoBusqueda> buscar({bool ampliada = false}) async {
+    final espera = esperaNecesaria();
+    if (espera > Duration.zero) return ResultadoBusqueda.throttled(espera);
+
+    try {
+      // Parar la anterior SIEMPRE. Arrancar una búsqueda con otra viva da
+      // "Another scan is already in progress" y no arranca ninguna.
+      await FlutterBluePlus.stopScan();
+      _limite.anota(DateTime.now());
+      await FlutterBluePlus.startScan(
+        withServices: ampliada ? [] : [Guid(_hrServiceUuid)],
+        timeout: const Duration(seconds: 20),
+        // Sin esto la lista solo CRECE: un dispositivo que ya no está sigue
+        // apareciendo, con su potencia de hace veinte segundos. Es la mitad de
+        // "la encuentra pero no es la correcta" — se elige una banda que ya no
+        // está a tiro, o la de un vecino que pasó por delante hace un rato.
+        continuousUpdates: true,
+        removeIfGone: const Duration(seconds: 6),
+      );
+      return const ResultadoBusqueda.ok();
+    } catch (e) {
+      return ResultadoBusqueda.fallo(e.toString());
+    }
   }
 
-  Future<void> stopScan() => FlutterBluePlus.stopScan();
+  Future<void> stopScan() async {
+    try { await FlutterBluePlus.stopScan(); } catch (_) { /* ya estaba parada */ }
+  }
 
-  Future<void> connect(BluetoothDevice device) async {
+  // ── LA BANDA DE SIEMPRE ───────────────────────────────────────────────
+  //
+  // Se recuerda cuál se usó la última vez para poder ponerla la primera y
+  // marcarla. La otra mitad de "la encuentra pero no es la correcta" es que
+  // había que elegir a ciegas entre nombres parecidos —la banda y el reloj
+  // Garmin anuncian los dos— y en modo ampliado salen hasta los altavoces.
+  static const _kUltimaId     = 'ble_ultima_banda_id';
+  static const _kUltimaNombre = 'ble_ultima_banda_nombre';
+
+  Future<({String id, String nombre})?> ultimaBanda() async {
+    final p = await SharedPreferences.getInstance();
+    final id = p.getString(_kUltimaId);
+    if (id == null || id.isEmpty) return null;
+    return (id: id, nombre: p.getString(_kUltimaNombre) ?? '');
+  }
+
+  Future<void> _recordarBanda(BluetoothDevice d) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kUltimaId, d.remoteId.str);
+    await p.setString(_kUltimaNombre, d.platformName);
+  }
+
+  /// Devuelve `true` si el dispositivo envía frecuencia cardíaca de verdad.
+  ///
+  /// ⚠️ ANTES ESTO NO SE DEVOLVÍA Y ERA UN FALLO MUDO. Si te conectabas a algo
+  /// que no es una banda —fácil en modo ampliado, donde salían el reloj, los
+  /// auriculares y hasta la tele, todos con un corazón rojo al lado— la
+  /// conexión funcionaba, la pantalla decía "conectado" y luego se quedaba en
+  /// "Esperando dato…" para siempre. Nadie te decía que te habías equivocado de
+  /// aparato.
+  Future<bool> connect(BluetoothDevice device) async {
     if (_device != null) await disconnect();
     _device = device;
     _desconexionPedida = false;
@@ -56,7 +154,11 @@ class BleService {
       }
     });
 
-    await _subscribeHR(device);
+    final tieneFc = await _subscribeHR(device);
+    // Solo se recuerda la que de verdad da pulsaciones: recordar un altavoz
+    // sería ofrecerte mañana el mismo error como si fuera tu banda.
+    if (tieneFc) await _recordarBanda(device);
+    return tieneFc;
   }
 
   // ── RECONEXIÓN ────────────────────────────────────────────────────────
@@ -93,7 +195,7 @@ class BleService {
     _reconectando = false;
   }
 
-  Future<void> _subscribeHR(BluetoothDevice device) async {
+  Future<bool> _subscribeHR(BluetoothDevice device) async {
     // Al reconectar esto se llama otra vez: sin cancelar la anterior quedarían
     // dos suscripciones vivas y cada latido entraría por duplicado en la media.
     await _hrSub?.cancel();
@@ -121,11 +223,13 @@ class BleService {
         });
 
         await char.setNotifyValue(true);
-        return;
+        return true;
       }
     }
-    // Si llega aquí: el servicio HR no se encontró en el dispositivo conectado.
-    // No lanzamos excepción — la UI mostrará "Esperando dato..."
+    // Aquí NO hay frecuencia cardíaca en el aparato al que nos hemos conectado.
+    // Antes esto se quedaba callado y la pantalla decía "Esperando dato…" hasta
+    // el fin de los tiempos. Ahora se devuelve la verdad y quien llama lo dice.
+    return false;
   }
 
   Future<void> disconnect() async {
