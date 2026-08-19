@@ -45,6 +45,20 @@ class _FuerzaSessionScreenState extends ConsumerState<FuerzaSessionScreen> {
   int _restante = 0;
   Timer? _timer;
 
+  /// ⚠️ EL TRABAJO POR TIEMPO TAMBIÉN SE CRONOMETRA, Y NO LO HACÍA.
+  ///
+  /// En una plancha de 45 segundos la pantalla enseñaba «45 s» y un botón: al
+  /// deportista le tocaba contarlos él, en mitad de la plancha y con el móvil
+  /// delante. El DESCANSO sí tenía cuenta atrás y aviso sonoro; el trabajo no —
+  /// justo al revés de lo que hace falta, porque durante el descanso puedes
+  /// mirar el reloj y aguantando una plancha no.
+  ///
+  /// Se arranca a mano (hay que colocarse antes) y al terminar suena y pasa
+  /// solo al descanso.
+  bool _trabajando = false;
+  int _restanteTrabajo = 0;
+  Timer? _timerTrabajo;
+
   /// Lo que de VERDAD ha hecho, serie a serie. Va a `actual_structure`.
   /// Sin esto no hay historial ("la última vez: 3×10 con 22 kg"), que es lo que
   /// permite saber si progresa.
@@ -75,7 +89,7 @@ class _FuerzaSessionScreenState extends ConsumerState<FuerzaSessionScreen> {
   }
 
   @override
-  void dispose() { _timer?.cancel(); super.dispose(); }
+  void dispose() { _timer?.cancel(); _timerTrabajo?.cancel(); super.dispose(); }
 
   PasoSerie? get _paso => _i < _pasos.length ? _pasos[_i] : null;
   PasoSerie? get _siguiente => _i + 1 < _pasos.length ? _pasos[_i + 1] : null;
@@ -116,6 +130,53 @@ class _FuerzaSessionScreenState extends ConsumerState<FuerzaSessionScreen> {
     });
   }
 
+  void _empezarTrabajo() {
+    final p = _paso;
+    final seg = p?.ejercicio.tiempoS ?? 0;
+    if (p == null || seg <= 0) return;
+
+    setState(() { _trabajando = true; _restanteTrabajo = seg; });
+    _timerTrabajo?.cancel();
+    _timerTrabajo = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      setState(() => _restanteTrabajo--);
+      if (_restanteTrabajo <= 0) {
+        t.cancel();
+        setState(() => _trabajando = false);
+        SoftChime.measurementDone();
+        // La serie se da por hecha con el tiempo QUE SE PIDIÓ: es el que se ha
+        // cronometrado. Si la corta antes, se guarda el que aguantó.
+        _registrarYDescansar(tiempoS: seg);
+      }
+    });
+  }
+
+  /// La corta antes de tiempo: se guarda lo que DE VERDAD aguantó, no lo que
+  /// se le había pedido. Anotar 45 s cuando hizo 30 es inventarse el entreno.
+  void _cortarTrabajo() {
+    final pedido = _paso?.ejercicio.tiempoS ?? 0;
+    final hecho = pedido - _restanteTrabajo;
+    _timerTrabajo?.cancel();
+    setState(() => _trabajando = false);
+    _registrarYDescansar(tiempoS: hecho > 0 ? hecho : null);
+  }
+
+  /// Deshacer el último paso. Con las manos sudadas y el móvil en el suelo, un
+  /// toque de más es lo más normal del mundo — y sin esto la única salida era
+  /// terminar la sesión con una serie que no se hizo.
+  void _volverAtras() {
+    if (_i == 0) return;
+    _timer?.cancel();
+    _timerTrabajo?.cancel();
+    setState(() {
+      _i--;
+      _descansando = false;
+      _trabajando = false;
+      _restante = 0;
+      if (_hecho.isNotEmpty) _hecho.removeLast();
+    });
+  }
+
   void _saltarDescanso() {
     _timer?.cancel();
     setState(() { _descansando = false; _restante = 0; });
@@ -143,11 +204,17 @@ class _FuerzaSessionScreenState extends ConsumerState<FuerzaSessionScreen> {
                    onGuardar: () async { await widget.onFinish?.call(_hecho); })
           else if (_descansando)
             _Descanso(skin: skin, restante: _restante, siguiente: _paso,
-                      onSaltar: _saltarDescanso)
+                      onSaltar: _saltarDescanso,
+                      onAtras: _i > 0 ? _volverAtras : null)
+          else if (_trabajando)
+            _Trabajando(skin: skin, paso: _paso!, restante: _restanteTrabajo,
+                        onCortar: _cortarTrabajo)
           else
             _Ejercicio(skin: skin, paso: _paso!, siguiente: _siguiente,
                        ultimaVez: _historial[_paso!.ejercicio.slug] as Map<String, dynamic>?,
-                       onHecha: _registrarYDescansar),
+                       onHecha: _registrarYDescansar,
+                       onEmpezarTiempo: _empezarTrabajo,
+                       onAtras: _i > 0 ? _volverAtras : null),
         ],
       ),
     );
@@ -274,10 +341,13 @@ class _Ejercicio extends StatelessWidget {
   final PasoSerie? siguiente;
   final Map<String, dynamic>? ultimaVez;
   final void Function({int? reps, int? tiempoS, int? rirDeclarado}) onHecha;
+  final VoidCallback onEmpezarTiempo;
+  final VoidCallback? onAtras;
 
   const _Ejercicio({required this.skin, required this.paso,
                     required this.siguiente, required this.onHecha,
-                    this.ultimaVez});
+                    required this.onEmpezarTiempo,
+                    this.onAtras, this.ultimaVez});
 
   /// "La última vez: 3×10 · 22 kg · hace 6 días"
   ///
@@ -395,6 +465,10 @@ class _Ejercicio extends StatelessWidget {
         width: double.infinity, height: 56,
         child: ElevatedButton(
           onPressed: () async {
+            // POR TIEMPO SE CRONOMETRA, NO SE DA POR HECHO. En una plancha de
+            // 45 s el boton "serie hecha" obligaba a contarlos de cabeza
+            // aguantando la plancha.
+            if (e.tiempoS != null && e.tiempoS! > 0) { onEmpezarTiempo(); return; }
             // En los ejercicios con e1RM se le pregunta cuánto le sobraba: es
             // lo único que convierte una serie registrada en un dato que sirve
             // para saber cuánto levanta. En el resto, un toque y a descansar.
@@ -402,13 +476,28 @@ class _Ejercicio extends StatelessWidget {
             final rir = await preguntarRir(context, skin, paso.ejercicio.nombre);
             onHecha(rirDeclarado: rir);   // null = no contestó: no se estima
           },
-          child: const FittedBox(
+          child: FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text('SERIE HECHA', maxLines: 1,
-                style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+            child: Text(
+                e.tiempoS != null && e.tiempoS! > 0 ? 'EMPEZAR' : 'SERIE HECHA',
+                maxLines: 1,
+                style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.5)),
           ),
         ),
       ),
+
+      if (onAtras != null) ...[
+        const SizedBox(height: 6),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: onAtras,
+            icon: Icon(Icons.undo, size: 16, color: skin.textMuted),
+            label: Text('Me he equivocado, volver',
+                style: TextStyle(color: skin.textMuted, fontSize: 13)),
+          ),
+        ),
+      ],
 
       if (siguiente != null) ...[
         const SizedBox(height: 18),
@@ -424,8 +513,10 @@ class _Ejercicio extends StatelessWidget {
 class _Descanso extends StatelessWidget {
   final SkinConfig skin; final int restante;
   final PasoSerie? siguiente; final VoidCallback onSaltar;
+  final VoidCallback? onAtras;
   const _Descanso({required this.skin, required this.restante,
-                   required this.siguiente, required this.onSaltar});
+                   required this.siguiente, required this.onSaltar,
+                   this.onAtras});
 
   @override
   Widget build(BuildContext context) {
@@ -473,6 +564,79 @@ class _Descanso extends StatelessWidget {
           child: const FittedBox(
             fit: BoxFit.scaleDown,
             child: Text('ESTOY LISTO', maxLines: 1,
+                style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1.2)),
+          ),
+        ),
+      ),
+      if (onAtras != null) ...[
+        const SizedBox(height: 6),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: onAtras,
+            icon: Icon(Icons.undo, size: 16, color: skin.textMuted),
+            label: Text('Me he equivocado, volver',
+                style: TextStyle(color: skin.textMuted, fontSize: 13)),
+          ),
+        ),
+      ],
+    ]);
+  }
+}
+
+// -- El trabajo cronometrado --------------------------------------------
+//
+// Faltaba entero. El DESCANSO tenia cuenta atras y aviso sonoro y el TRABAJO
+// no: en una plancha de 45 segundos habia que contarlos de cabeza. Justo al
+// reves de lo que hace falta -- descansando puedes mirar el reloj, aguantando
+// una plancha no.
+class _Trabajando extends StatelessWidget {
+  final SkinConfig skin; final PasoSerie paso;
+  final int restante; final VoidCallback onCortar;
+  const _Trabajando({required this.skin, required this.paso,
+                     required this.restante, required this.onCortar});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = paso.ejercicio.tiempoS ?? 1;
+    final m = restante ~/ 60, s = restante % 60;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(paso.ejercicio.nombre.toUpperCase(),
+          maxLines: 2, overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: skin.accent, fontSize: 12,
+              letterSpacing: 1.4, fontWeight: FontWeight.w700)),
+      const SizedBox(height: 12),
+      FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Text(m > 0 ? '$m:${s.toString().padLeft(2, '0')}' : '$s',
+            maxLines: 1,
+            style: TextStyle(color: skin.textPrimary, fontSize: 84,
+                fontWeight: FontWeight.w800, fontFamily: skin.fontFamilyMono)),
+      ),
+      const SizedBox(height: 4),
+      Text('Serie ${paso.serie} de ${paso.deSeries}',
+          style: TextStyle(color: skin.textSecondary, fontSize: 15,
+              fontWeight: FontWeight.w600)),
+      const SizedBox(height: 16),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: LinearProgressIndicator(
+          value: total == 0 ? 0 : (total - restante) / total,
+          minHeight: 8,
+          backgroundColor: skin.textMuted.withValues(alpha: 0.2),
+          valueColor: AlwaysStoppedAnimation(skin.accent),
+        ),
+      ),
+      const SizedBox(height: 24),
+      SizedBox(
+        width: double.infinity, height: 52,
+        child: OutlinedButton(
+          onPressed: onCortar,
+          child: const FittedBox(
+            fit: BoxFit.scaleDown,
+            // Se para y se guarda lo que AGUANTO, no lo que se le pidio.
+            child: Text('NO PUEDO MAS', maxLines: 1,
                 style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1.2)),
           ),
         ),

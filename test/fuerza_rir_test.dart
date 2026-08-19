@@ -104,8 +104,13 @@ void main() {
     await tester.tap(find.text('ESTOY LISTO'));
     await tester.pump();
 
-    // La plancha no lleva e1RM: ni pregunta, ni aporta el dato.
-    await tester.tap(find.text('SERIE HECHA'));
+    // La plancha no lleva e1RM: ni pregunta, ni aporta el dato. Y va por
+    // tiempo, así que se cronometra en vez de darse por hecha de un toque.
+    await tester.tap(find.text('EMPEZAR'));
+    await tester.pump();
+    for (var i = 0; i < 41; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
     await tester.pumpAndSettle();
     await tester.tap(find.text('GUARDAR'));
     await tester.pumpAndSettle();
@@ -154,7 +159,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('ESTOY LISTO'));
     await tester.pump();
-    await tester.tap(find.text('SERIE HECHA'));         // plancha
+    // ⚠️ La plancha va POR TIEMPO: ahora se cronometra en vez de darse por
+    // hecha de un toque. Antes decía «SERIE HECHA» y había que contar los 40
+    // segundos de cabeza, aguantando la plancha.
+    await tester.tap(find.text('EMPEZAR'));             // plancha, 40 s
+    await tester.pump();
+    for (var i = 0; i < 41; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
     await tester.pumpAndSettle();
     await tester.tap(find.text('GUARDAR'));
     await tester.pumpAndSettle();
