@@ -22,6 +22,7 @@ import '../../core/audio/audio_cue_service.dart';
 import '../../core/audio/session_audio_controller.dart';
 import 'block_progress_widget.dart';
 import 'interval_rep_widget.dart';
+import '../../core/session/resumen_bloque.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -1140,6 +1141,43 @@ class _BlockCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                  ],
+                  // Lo que se va a hacer de verdad, no solo cuánto dura.
+                  if (resumenSerieDe(block) != null) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      resumenSerieDe(block)!,
+                      style: TextStyle(
+                          color: isActive ? skin.accent : skin.textPrimary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                  if (lineasEjercicios(block).isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    // ⚠️ En su PROPIA columna y con ellipsis: con la letra al
+                    // 180 % una fila que no cabe recorta sin avisar, y aquí lo
+                    // que se pierde es qué ejercicio toca.
+                    ...(lineasEjercicios(block).map((linea) => Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '· $linea',
+                            style: TextStyle(
+                                color: skin.textSecondary, fontSize: 12, height: 1.3),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ))),
+                    if (resumenRondas(block) != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        resumenRondas(block)!,
+                        style: TextStyle(
+                            color: isActive ? skin.accent : skin.textMuted,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ],
                   ],
                   if (zonaFC != null || ritmo != null) ...[
                     const SizedBox(height: 6),
