@@ -2,6 +2,7 @@ import 'audio_cue_service.dart';
 import 'medidor_bloques.dart';
 import '../utils/zona_fc.dart';
 import '../session/aviso_zona.dart';
+import 'salida_de_audio.dart';
 
 // Tipos de bloque que se interpretan como intervalos/series
 const _kIntervalTypes = {'intervals', 'series', 'interval', 'fartlek', 'repeticiones', 'hiit'};
@@ -224,7 +225,7 @@ enum _Phase {
 // ── SessionAudioController ─────────────────────────────────────────────────
 
 class SessionAudioController {
-  final AudioCueService _audio;
+  final SalidaDeAudio _audio;
   final List<BlockInfo> blocks;
 
   _Phase _phase        = _Phase.idle;
@@ -278,7 +279,7 @@ class SessionAudioController {
   AvisoZona _aviso = AvisoZona();
 
   SessionAudioController({
-    required AudioCueService audio,
+    required SalidaDeAudio audio,
     required List<dynamic>   rawBlocks,
     this.zonasFc,
     this.equivalencia,
@@ -516,6 +517,16 @@ class SessionAudioController {
     final restElapsed = elapsed - _restStartElapsed;
     final remaining   = block.recoverySeconds - restElapsed;
 
+    // A falta de 10 s se avisa de QUÉ viene: no es lo mismo prepararse para
+    // otra serie que para el final del bloque.
+    final totalReps = block.repCount ?? 1;
+    if (block.recoverySeconds >= 30 && remaining == 10 &&
+        _fire('rest_aviso10_${_blockIdx}_$_currentRep')) {
+      await _audio.speak(_currentRep >= totalReps
+          ? 'En 10 segundos terminamos el bloque.'
+          : 'En 10 segundos, serie ${_currentRep + 1} de $totalReps.');
+    }
+
     if (remaining <= 5 && _fire('rest_beeps_${_blockIdx}_$_currentRep')) {
       _phase = _Phase.intervalRestBeeps;
       await _audio.countdown5();
@@ -540,6 +551,13 @@ class SessionAudioController {
     // Pitidos en los últimos 5 s si el objetivo es por tiempo
     if (targetSec != null) {
       final remaining = targetSec - repElapsed;
+      // Aviso HABLADO a falta de 10 s, y solo en repeticiones que dan para
+      // ello: en una de treinta segundos, avisar a los diez es hablar encima
+      // del esfuerzo. Ahí bastan los pitidos.
+      if (targetSec >= 60 && remaining == 10 &&
+          _fire('rep_aviso10_${_blockIdx}_$_currentRep')) {
+        await _audio.speak('Últimos 10 segundos.');
+      }
       if (remaining == 5 && _fire('rep_beeps_${_blockIdx}_$_currentRep')) {
         await _audio.countdown5();
       }
@@ -595,7 +613,7 @@ class SessionAudioController {
       _repResults  = [];
       final reps   = block.repCount != null ? '${block.repCount} series' : 'series';
       final repTgt = block.repDurationSeconds != null
-          ? 'de ${_fmtSec(block.repDurationSeconds!)} minutos'
+          ? 'de ${_fmtSec(block.repDurationSeconds!)}'
           : block.repDistanceM != null
               ? 'de ${block.repDistanceM} metros'
               : '';
@@ -604,7 +622,20 @@ class SessionAudioController {
         'Bloque $n, ${block.label}. $reps $repTgt. $tgtTxt $rec',
       );
       await Future.delayed(const Duration(milliseconds: 1800));
-      await _startIntervalRest(elapsed, announce: false);
+      // ⚠️ ANTES ESTO ARRANCABA EL BLOQUE CON UN DESCANSO
+      // (`_startIntervalRest(announce: false)`), así que el deportista se
+      // quedaba parado los 90 segundos de la recuperación ANTES de la primera
+      // serie, en silencio y sin saber por qué. Y el bloque duraba un descanso
+      // de más: 3 x 8 con 90 s son 27 minutos, no 28 y medio.
+      //
+      // Un bloque de series empieza CORRIENDO. El descanso va entre
+      // repeticiones, que es lo que significa "entre".
+      // ⚠️ CON LA DISTANCIA YA RECORRIDA. Sin esto, `_repStartDistM` se queda
+      // en 0 y la primera serie mide desde el principio de la sesión: salía
+      // "ritmo 1:55" en una serie corrida a 5:33, y encima con el veredicto
+      // "algo rápido, controla en la siguiente". Un dato inventado con consejo
+      // encima es peor que no decir nada.
+      await _startIntervalRep(elapsed, distanceM: _ultimaDistanciaM);
     } else {
       await _audio.speak('Bloque $n, ${block.label}. $dur$tgtTxt');
     }
@@ -671,9 +702,22 @@ class SessionAudioController {
     _currentRep++;
     _repStartElapsed = elapsed;
     _repStartDistM   = distanceM;
-    final total      = blocks[_blockIdx].repCount ?? '?';
+    final block      = blocks[_blockIdx];
+    final total      = block.repCount ?? '?';
     await _audio.beepLong();
-    await _audio.speak('Serie $_currentRep de $total. ¡Ya!');
+
+    // El objetivo (ritmo o pulsaciones) se repite EN CADA serie cuando hay
+    // tiempo de decirlo: en una repetición de ocho minutos, oírlo al empezar es
+    // justo lo que hace falta para no salir demasiado rápido. En series muy
+    // cortas se dice solo en la primera — meter una frase larga en un sprint de
+    // treinta segundos es robarle el arranque.
+    final tgt   = block.targetDescription;
+    final largo = (block.repDurationSeconds ?? 0) >= 120;
+    final decirObjetivo = tgt.isNotEmpty && (largo || _currentRep == 1);
+
+    final tgtFrase = decirObjetivo && tgt.isNotEmpty
+        ? '${tgt[0].toUpperCase()}${tgt.substring(1)}. ' : '';
+    await _audio.speak('Serie $_currentRep de $total. $tgtFrase¡Ya!');
   }
 
   Future<void> _endIntervalRep(int elapsed, {int distanceM = 0, bool manual = false}) async {

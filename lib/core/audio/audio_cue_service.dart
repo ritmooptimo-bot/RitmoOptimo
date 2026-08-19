@@ -4,11 +4,12 @@ import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'salida_de_audio.dart';
 
 /// Servicio de audio para sesiones guiadas.
 /// Genera beeps WAV en memoria (sin archivos de asset).
 /// Fix #2: keepalive silencioso en loop para iOS background.
-class AudioCueService {
+class AudioCueService implements SalidaDeAudio {
   final FlutterTts _tts = FlutterTts();
   final AudioPlayer _beepPlayer = AudioPlayer();
   final AudioPlayer _keepalivePlayer = AudioPlayer();
