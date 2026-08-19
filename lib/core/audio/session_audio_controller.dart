@@ -49,17 +49,38 @@ class BlockInfo {
   });
 
   static BlockInfo fromMap(int index, Map<String, dynamic> b) {
-    final typeRaw = (b['block'] ?? b['blockType'] ?? b['tipo'] ?? b['type'] ?? '')
+    // ⚠️ EL ORDEN DE ESTA CADENA TENÍA EL FALLO. Antes era
+    // `b['block'] ?? b['blockType'] ?? b['tipo'] ?? b['type']`, o sea que
+    // cogía PRIMERO el nombre humano del bloque — "Parte principal",
+    // "Series 4 x 6 min" — y solo miraba `type` si no había nombre, cosa que
+    // no pasa nunca.
+    //
+    // Y como `isInterval` exige coincidencia EXACTA con la lista de tipos, un
+    // bloque llamado "Series 4 x 6 min" no casaba con 'series' y la app lo
+    // trataba como carrera continua. Resultado: toda la guía de repeticiones
+    // —la cuenta atrás, los pitidos, "serie 3 de 6", saltar descanso— llevaba
+    // meses escrita y sin dispararse jamás.
+    //
+    // El tipo canónico va PRIMERO; el nombre humano es para leerlo, no para
+    // decidir con él.
+    final typeRaw = (b['type'] ?? b['blockType'] ?? b['tipo'] ?? b['block'] ?? '')
         .toString()
         .toLowerCase()
         .trim();
+    final nombreBloque = (b['block'] ?? '').toString().trim();
     final desc    = (b['descripcion'] ?? b['description'] ?? b['desc'] ?? '').toString().trim();
     final durMin  = _parseDouble(b['min'] ?? b['durationMin'] ?? b['duracion_min'] ??
                                  b['duration_min'] ?? b['dur_min']) ?? 0.0;
     final zoneRaw = b['zone'] ?? b['zona_fc'] ?? b['hr_zone'] ?? b['zona'];
     final escala  = (b['zone_escala'] ?? 'desconocida').toString();
     final paceRaw = b['ritmo_objetivo'] ?? b['target_pace'] ?? b['pace'];
-    final isInt   = _kIntervalTypes.contains(typeRaw);
+    // Y si el bloque TRAE repeticiones utilizables, es una serie diga lo que diga
+    // su etiqueta: el dato es la prueba. Así una serie sigue guiándose aunque
+    // alguien escriba el tipo de otra manera.
+    final traeReps = (_parseInt(b['reps'] ?? b['repeticiones'] ?? b['num_reps']) ?? 0) >= 2 &&
+        ((_parseDouble(b['rep_duration_min'] ?? b['rep_time_min']) ?? 0) > 0 ||
+         (_parseInt(b['rep_distance_m'] ?? b['distancia_rep']) ?? 0) > 0);
+    final isInt   = _kIntervalTypes.contains(typeRaw) || traeReps;
 
     int? repCount;
     int? repDurSec;
@@ -79,7 +100,10 @@ class BlockInfo {
 
     return BlockInfo(
       index:              index,
-      label:              _buildLabel(typeRaw, desc),
+      // Para LEER manda el nombre que escribió el entrenador ("Series 4 x 6 min"),
+      // que dice mucho más que "Intervalos". El tipo solo se usa para decidir.
+      label:              desc.isNotEmpty ? desc
+                          : (nombreBloque.isNotEmpty ? nombreBloque : _buildLabel(typeRaw, desc)),
       type:               typeRaw,
       durationSeconds:    durMin > 0 ? (durMin * 60).round() : 0,
       zone:               zonaFcNumero(zoneRaw),
