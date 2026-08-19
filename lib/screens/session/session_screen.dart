@@ -279,7 +279,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     try {
       await ref.read(apiClientProvider).completeSession(id, {
         'actualDurationMin': minutos > 0 ? minutos : null,
-        'structure': ref.read(activeSessionProvider).session?['structure'],
+        'structure': ref.read(activeSessionProvider).session?['planned_structure']
+                     ?? ref.read(activeSessionProvider).session?['structure'],
         'athleteFeedback': {'series_realizadas': realizado},
       });
       if (!mounted) return;
@@ -511,11 +512,27 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     // por el contenido: una sesión de fuerza antigua (de las que eran un párrafo)
     // sigue abriendo la pantalla de siempre, y una de otro tipo que traiga
     // ejercicios se guía bien igualmente.
+    // ⚠️ EL CAMPO SE LLAMA `planned_structure`, NO `structure`.
+    //
+    // El endpoint devuelve `structure AS planned_structure`, y esta condición
+    // leía `structure` — que NO EXISTE en la respuesta. Resultado:
+    // `desdeEstructura(null)` daba vacío, la pantalla de fuerza NO SE ABRÍA
+    // NUNCA, y el deportista veía la pantalla de carrera con tres bloques
+    // («Calentamiento, Fuerza general, Vuelta a la calma») en vez de sus
+    // ejercicios.
+    //
+    // Toda esta pantalla —los pasos aplanados de un circuito, el descanso entre
+    // series, el RIR al acabar— estaba escrita y no se ha ejecutado jamás. Es la
+    // tercera cosa así hoy: la guía de repeticiones de las series y el aviso de
+    // zona tenían el mismo problema.
+    final estructuraFuerza = session.session?['planned_structure']
+        ?? session.session?['structure'];
+
     if (!_loadingSession && session.session != null &&
         !isCompleted &&
-        BloqueFuerza.desdeEstructura(session.session!['structure']).isNotEmpty) {
+        BloqueFuerza.desdeEstructura(estructuraFuerza).isNotEmpty) {
       return FuerzaSessionScreen(
-        session: session.session!,
+        session: { ...session.session!, 'structure': estructuraFuerza },
         onFinish: (realizado) => _guardarFuerza(realizado),
       );
     }

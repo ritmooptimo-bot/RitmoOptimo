@@ -58,7 +58,10 @@ class _FuerzaSessionScreenState extends ConsumerState<FuerzaSessionScreen> {
   void initState() {
     super.initState();
     _pasos = PasoSerie.desdeBloques(
-        BloqueFuerza.desdeEstructura(widget.session['structure']));
+        // El endpoint manda `planned_structure`; se acepta también `structure`
+        // por si la sesión llega por otro camino (p. ej. ya normalizada).
+        BloqueFuerza.desdeEstructura(
+            widget.session['planned_structure'] ?? widget.session['structure']));
     _cargarHistorial();
   }
 
