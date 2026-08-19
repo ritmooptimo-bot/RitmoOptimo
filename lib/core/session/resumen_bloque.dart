@@ -39,7 +39,9 @@ String? resumenSerieDe(Map<String, dynamic> b) {
   final zonaRec = b['recovery_zone'];
   final recTxt = rec > 0
       ? ' · recupera ${_mmss(rec)}'
-          '${zonaRec != null ? ' en ${etiquetaZonaFc(zonaRec) ?? zonaRec}' : ''}'
+          // La zona de recuperación va en la MISMA escala que la del trabajo:
+          // si el bloque es de percepción, «R1», no «Z1 FC».
+          '${zonaRec != null ? ' en ${etiquetaZonaFc(zonaRec, escala: b['zone_escala'] as String?) ?? zonaRec}' : ''}'
       : '';
   return '$reps × $trabajo$recTxt';
 }

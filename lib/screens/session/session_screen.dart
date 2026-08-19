@@ -1193,7 +1193,11 @@ class _BlockCard extends StatelessWidget {
                       children: [
                         if (zonaFC != null)
                           _Tag(
-                              label: etiquetaZonaFc(zonaFC)!,
+                              // ⚠️ CON SU ESCALA. Sin esto, un bloque en R2
+                              // se pintaba «Z2 FC» — otra escala y treinta
+                              // pulsaciones menos que lo que pide el plan.
+                              label: etiquetaZonaFc(zonaFC,
+                                  escala: block['zone_escala'] as String?)!,
                               color: skin.error,
                               skin: skin),
                         if (ritmo != null)

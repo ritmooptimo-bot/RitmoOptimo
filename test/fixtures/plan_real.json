@@ -1,0 +1,365 @@
+{
+ "generado_desde": "produccion",
+ "sesiones": [
+  {
+   "fecha": "2026-08-19",
+   "session_type": "base",
+   "title": "Remo indoor",
+   "duration_target_min": 30,
+   "planned_structure": [
+    {
+     "min": 30,
+     "type": "continuous",
+     "zone": "R1",
+     "block": "Remo indoor",
+     "descripcion": "Muy suave, a un esfuerzo que permita conversación sin problema. Mover el cuerpo y favorecer la recuperación, sin exigirle nada al sistema cardiovascular.",
+     "type_origen": "explicito",
+     "zone_escala": "percepcion"
+    }
+   ]
+  },
+  {
+   "fecha": "2026-08-21",
+   "session_type": "umbral",
+   "title": "Series en R2",
+   "duration_target_min": 55,
+   "planned_structure": [
+    {
+     "min": 15,
+     "type": "warmup",
+     "zone": "R1",
+     "block": "Calentamiento",
+     "type_origen": "explicito",
+     "zone_escala": "percepcion"
+    },
+    {
+     "min": 27,
+     "reps": 3,
+     "type": "intervals",
+     "zone": "R2",
+     "block": "Series 3 x 8 min",
+     "_trabajo": 24,
+     "_conflicto": null,
+     "type_origen": "explicito",
+     "zone_escala": "percepcion",
+     "recovery_zone": "R1",
+     "series_origen": "compuesta_por_la_casa",
+     "series_porque": "acumular minutos en umbral: repeticiones largas y recuperacion corta (Z4: \"repeticiones de 8 a 20 min con recuperacion activa\")",
+     "recovery_seconds": 90,
+     "rep_duration_min": 8
+    },
+    {
+     "min": 13,
+     "type": "cooldown",
+     "zone": "R1",
+     "block": "Vuelta a la calma",
+     "type_origen": "explicito",
+     "zone_escala": "percepcion",
+     "calma_recortada_min": 10
+    }
+   ]
+  },
+  {
+   "fecha": "2026-08-22",
+   "session_type": "fuerza",
+   "title": "Fuerza general",
+   "duration_target_min": 45,
+   "planned_structure": [
+    {
+     "min": 10,
+     "type": "warmup",
+     "zone": "R1",
+     "block": "Calentamiento",
+     "ejercicios": [
+      {
+       "slug": "movilidad_cadera_90_90",
+       "series": 2,
+       "tiempo_s": 45,
+       "descanso_s": 15,
+       "nombre": "Movilidad de cadera 90/90",
+       "patron": "movilidad",
+       "material": [
+        "esterilla"
+       ],
+       "unilateral": false,
+       "por_tiempo": true,
+       "indicaciones": "Cambia de lado sin ayudarte con las manos, si puedes.",
+       "resumen": "Movilidad de cadera 90/90 — 2×45s · descanso 15 s",
+       "carga": null,
+       "carga_motivo": "por tiempo",
+       "rm_kg": null,
+       "rm_fecha": null
+      },
+      {
+       "slug": "movilidad_toracica",
+       "series": 2,
+       "tiempo_s": 45,
+       "descanso_s": 15,
+       "nombre": "Movilidad torácica en el suelo",
+       "patron": "movilidad",
+       "material": [
+        "esterilla"
+       ],
+       "unilateral": true,
+       "por_tiempo": true,
+       "indicaciones": "Abre el brazo siguiéndolo con la mirada. Muy útil tras horas en la bici.",
+       "resumen": "Movilidad torácica en el suelo — 2×45s · descanso 15 s",
+       "carga": null,
+       "carga_motivo": "por tiempo",
+       "rm_kg": null,
+       "rm_fecha": null
+      }
+     ],
+     "type_origen": "explicito",
+     "zone_escala": "percepcion"
+    },
+    {
+     "min": 25,
+     "tipo": "circuito",
+     "type": "strength",
+     "zone": "R1",
+     "block": "Fuerza general",
+     "rondas": 3,
+     "ejercicios": [
+      {
+       "reps": 10,
+       "slug": "sentadilla_goblet",
+       "carga": {
+        "tipo": "rir",
+        "valor": 4
+       },
+       "series": 3,
+       "descanso_s": 60,
+       "nombre": "Sentadilla goblet",
+       "patron": "sentadilla",
+       "material": [
+        "mancuernas",
+        "kettlebell"
+       ],
+       "unilateral": false,
+       "por_tiempo": false,
+       "indicaciones": "Peso pegado al pecho, codos dentro de las rodillas. La espalda no se redondea abajo.",
+       "resumen": "Sentadilla goblet — 3×10 · RIR 4 · descanso 60 s",
+       "carga_motivo": "sin cambios",
+       "rm_kg": null,
+       "rm_fecha": null
+      },
+      {
+       "reps": 10,
+       "slug": "peso_muerto_rumano",
+       "carga": {
+        "tipo": "rir",
+        "valor": 4
+       },
+       "series": 3,
+       "pide_rir": true,
+       "descanso_s": 60,
+       "nombre": "Peso muerto rumano",
+       "patron": "bisagra",
+       "material": [
+        "mancuernas",
+        "barra"
+       ],
+       "unilateral": false,
+       "por_tiempo": false,
+       "indicaciones": "Cadera atrás, piernas casi rectas. Notas el estiramiento detrás del muslo, no en la zona lumbar.",
+       "resumen": "Peso muerto rumano — 3×10 · RIR 4 · descanso 60 s",
+       "carga_motivo": "peso_muerto_rumano: todavía no se le ha medido → se prescribe por esfuerzo",
+       "rm_kg": null,
+       "rm_fecha": null
+      },
+      {
+       "reps": 10,
+       "slug": "flexiones",
+       "carga": {
+        "tipo": "rir",
+        "valor": 4
+       },
+       "series": 3,
+       "descanso_s": 60,
+       "nombre": "Flexiones",
+       "patron": "empuje_horizontal",
+       "material": [
+        "peso_corporal"
+       ],
+       "unilateral": false,
+       "por_tiempo": false,
+       "indicaciones": "Cuerpo en línea de la cabeza a los talones. Codos a unos 45 grados, no abiertos del todo.",
+       "resumen": "Flexiones — 3×10 · RIR 4 · descanso 60 s",
+       "carga_motivo": "sin cambios",
+       "rm_kg": null,
+       "rm_fecha": null
+      },
+      {
+       "reps": 10,
+       "slug": "remo_mancuerna",
+       "carga": {
+        "tipo": "rir",
+        "valor": 4
+       },
+       "series": 3,
+       "descanso_s": 60,
+       "nombre": "Remo a una mano con mancuerna",
+       "patron": "traccion_horizontal",
+       "material": [
+        "mancuernas",
+        "banco"
+       ],
+       "unilateral": true,
+       "por_tiempo": false,
+       "indicaciones": "Espalda paralela al suelo y quieta; solo se mueve el brazo.",
+       "resumen": "Remo a una mano con mancuerna — 3×10 · RIR 4 · descanso 60 s",
+       "carga_motivo": "sin cambios",
+       "rm_kg": null,
+       "rm_fecha": null
+      },
+      {
+       "slug": "plancha_frontal",
+       "series": 3,
+       "tiempo_s": 45,
+       "descanso_s": 45,
+       "nombre": "Plancha frontal",
+       "patron": "core",
+       "material": [
+        "peso_corporal"
+       ],
+       "unilateral": false,
+       "por_tiempo": true,
+       "indicaciones": "Cadera ni alta ni caída. Aprieta glúteo y abdomen.",
+       "resumen": "Plancha frontal — 3×45s · descanso 45 s",
+       "carga": null,
+       "carga_motivo": "por tiempo",
+       "rm_kg": null,
+       "rm_fecha": null
+      },
+      {
+       "reps": 10,
+       "slug": "zancada_caminando",
+       "carga": {
+        "tipo": "rir",
+        "valor": 4
+       },
+       "series": 3,
+       "descanso_s": 60,
+       "nombre": "Zancada caminando",
+       "patron": "sentadilla",
+       "material": [
+        "peso_corporal",
+        "mancuernas"
+       ],
+       "unilateral": true,
+       "por_tiempo": false,
+       "indicaciones": "Paso largo, rodilla de atrás casi al suelo. Tronco erguido.",
+       "resumen": "Zancada caminando — 3×10 · RIR 4 · descanso 60 s",
+       "carga_motivo": "sin cambios",
+       "rm_kg": null,
+       "rm_fecha": null
+      }
+     ],
+     "type_origen": "explicito",
+     "zone_escala": "percepcion",
+     "descanso_entre_rondas_s": 90
+    },
+    {
+     "min": 10,
+     "type": "cooldown",
+     "zone": "R1",
+     "block": "Vuelta a la calma",
+     "ejercicios": [
+      {
+       "slug": "estiramiento_gemelo",
+       "series": 2,
+       "tiempo_s": 30,
+       "descanso_s": 15,
+       "nombre": "Estiramiento de gemelo y sóleo",
+       "patron": "estiramiento",
+       "material": [
+        "peso_corporal"
+       ],
+       "unilateral": true,
+       "por_tiempo": true,
+       "indicaciones": "Con la rodilla estirada estiras el gemelo; con ella doblada, el sóleo.",
+       "resumen": "Estiramiento de gemelo y sóleo — 2×30s · descanso 15 s",
+       "carga": null,
+       "carga_motivo": "por tiempo",
+       "rm_kg": null,
+       "rm_fecha": null
+      },
+      {
+       "slug": "estiramiento_isquios",
+       "series": 2,
+       "tiempo_s": 30,
+       "descanso_s": 15,
+       "nombre": "Estiramiento de isquiotibiales",
+       "patron": "estiramiento",
+       "material": [
+        "esterilla"
+       ],
+       "unilateral": true,
+       "por_tiempo": true,
+       "indicaciones": "Espalda recta; el estiramiento va desde la cadera, no doblando la espalda.",
+       "resumen": "Estiramiento de isquiotibiales — 2×30s · descanso 15 s",
+       "carga": null,
+       "carga_motivo": "por tiempo",
+       "rm_kg": null,
+       "rm_fecha": null
+      },
+      {
+       "slug": "estiramiento_psoas",
+       "series": 2,
+       "tiempo_s": 30,
+       "descanso_s": 15,
+       "nombre": "Estiramiento de psoas",
+       "patron": "estiramiento",
+       "material": [
+        "esterilla"
+       ],
+       "unilateral": true,
+       "por_tiempo": true,
+       "indicaciones": "Rodilla en el suelo, aprieta el glúteo del lado que estiras y lleva la cadera adelante.",
+       "resumen": "Estiramiento de psoas — 2×30s · descanso 15 s",
+       "carga": null,
+       "carga_motivo": "por tiempo",
+       "rm_kg": null,
+       "rm_fecha": null
+      }
+     ],
+     "type_origen": "explicito",
+     "zone_escala": "percepcion"
+    }
+   ]
+  },
+  {
+   "fecha": "2026-08-23",
+   "session_type": "largo",
+   "title": "Rodaje largo",
+   "duration_target_min": 90,
+   "planned_structure": [
+    {
+     "min": 10,
+     "type": "warmup",
+     "zone": "R1",
+     "block": "Calentamiento",
+     "type_origen": "explicito",
+     "zone_escala": "percepcion"
+    },
+    {
+     "min": 75,
+     "type": "continuous",
+     "zone": "R1",
+     "block": "Parte principal",
+     "type_origen": "explicito",
+     "zone_escala": "percepcion"
+    },
+    {
+     "min": 5,
+     "type": "cooldown",
+     "zone": "R1",
+     "block": "Vuelta a la calma",
+     "type_origen": "explicito",
+     "zone_escala": "percepcion"
+    }
+   ]
+  }
+ ]
+}
