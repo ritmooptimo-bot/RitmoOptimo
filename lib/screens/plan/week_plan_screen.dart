@@ -937,6 +937,19 @@ class _SessionTile extends StatelessWidget {
     final rawMin = session['planned_duration_min'];
     final esLibre = session['is_free_session'] == true;
 
+    // ── LAS OPCIONES DEL DÍA (O5) ────────────────────────────────────────
+    //
+    // Dos sesiones el mismo día pueden ser dos cosas MUY distintas: un día de
+    // doble entreno (las dos se hacen) o dos alternativas (se hace una). Se
+    // distinguen por `opcion_grupo`, y sin pintarlo la app las enseñaba iguales
+    // — y quien ve dos tarjetas entiende que le tocan las dos.
+    final grupo = session['opcion_grupo'] as String?;
+    final esOpcion = grupo != null && grupo.isNotEmpty;
+    final laPidioEl = session['opcion_origen'] == 'peticion_atleta';
+    final descartada = status == 'descartada';
+    final noAconsejada = session['no_aconsejada'] == true;
+    final motivoNA = (session['motivo_no_aconsejada'] as String?)?.trim();
+
     Color statusColor;
     String statusLabel;
     switch (status) {
@@ -957,6 +970,16 @@ class _SessionTile extends StatelessWidget {
         // sesión "Programada".
         statusColor = skin.textMuted;
         statusLabel = 'Descanso';
+      case 'descartada':
+        // ⚠️ Sin este caso caía en el `default` y se pintaba «Programada»: la
+        // sesión que el deportista NO eligió se anunciaba como si fuera a
+        // hacerla. El estado entró con las opciones del día (mig. 093) y la app
+        // no se enteró — la regla en un camino y no en el otro, otra vez.
+        //
+        // Y NO es 'Perdida': no se dejó de hacer, se eligió la otra. Pintarla en
+        // rojo sería acusarle de fallar un día que cumplió.
+        statusColor = skin.textMuted;
+        statusLabel = 'Descartada';
       default:
         statusColor = skin.textMuted;
         statusLabel = 'Programada';
@@ -1025,9 +1048,14 @@ class _SessionTile extends StatelessWidget {
                           child: Text(
                             title,
                             style: TextStyle(
-                              color: skin.textPrimary,
+                              color: descartada
+                                  ? skin.textMuted
+                                  : skin.textPrimary,
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
+                              decoration: descartada
+                                  ? TextDecoration.lineThrough
+                                  : null,
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -1035,6 +1063,57 @@ class _SessionTile extends StatelessWidget {
                         ),
                       ],
                     ),
+                    // ── "elige una" (O5) ───────────────────────────────
+                    //
+                    // Va en su PROPIA fila y no como otro chip al lado del
+                    // título: con la letra al 180 % un Row que no cabe recorta
+                    // sin avisar, y esto es justo lo que no se puede perder.
+                    if (esOpcion && !descartada) ...[
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          Icon(Icons.alt_route,
+                              size: 13, color: skin.accent),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              laPidioEl
+                                  ? 'Elige una: esta la pediste tú'
+                                  : 'Elige una: esta es la del plan',
+                              style: TextStyle(
+                                  color: skin.accent,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    // El agente lo dejó preparado, pero no lo aconsejaba (O6).
+                    // Se lo dijo por el chat hace días, entre otros mensajes: si
+                    // no está también aquí, para cuando la abre ya no lo recuerda.
+                    if (noAconsejada && motivoNA != null && motivoNA.isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.info_outline,
+                              size: 13, color: skin.warning),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              'Tu entrenador no lo aconsejaba. $motivoNA',
+                              style: TextStyle(
+                                  color: skin.warning, fontSize: 11),
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 6),
                     // Fecha · duración  +  chip de estado (movido aquí abajo para
                     // que el título tenga el ancho completo y no se corte).
