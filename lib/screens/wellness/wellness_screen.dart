@@ -294,6 +294,20 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
           Text('Al modificar se sobrescribe el registro de hoy; te avisaremos antes.',
               textAlign: TextAlign.center,
               style: TextStyle(color: skin.textMuted, fontSize: 12)),
+
+          // ⚠️ SU AÑO TAMBIÉN AQUÍ, Y ESTO NO ES UN DUPLICADO POR PEREZA.
+          //
+          // Esta pantalla tiene DOS ramas: el formulario del check-in y esta
+          // ficha de solo lectura, que es la que se ve el resto del día en
+          // cuanto lo has rellenado. La tarjeta del año se puso solo en la del
+          // formulario — o sea que quien hace su check-in a diario, que es el
+          // que debe, no la vería NUNCA.
+          //
+          // No dio ningún error: la pantalla se veía perfecta, solo que sin la
+          // tarjeta. Se vio abriéndola en el móvil, no leyendo el código.
+          const SizedBox(height: 24),
+          AnioCard(skin: skin),
+
           const SizedBox(height: 24),
         ],
       ),
