@@ -4,6 +4,7 @@ import '../../providers/skin_provider.dart';
 import '../../core/network/api_client.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../widgets/boton_ajustes.dart';
+import '../../widgets/anio_card.dart';
 import 'hrv_camera_screen.dart';
 import 'hrv_band_screen.dart';
 
@@ -412,6 +413,13 @@ class _WellnessScreenState extends ConsumerState<WellnessScreen> {
 
                   // HRV vs línea base de 7 días (estado de recuperación)
                   _HrvBaselineCard(skin: skin),
+
+                  const SizedBox(height: 12),
+
+                  // SU AÑO. Las de arriba miran ventanas cortas a propósito
+                  // (7 días, hoy) porque para decidir mañana eso es lo que
+                  // vale. Esta es la historia que esas ventanas no dejan ver.
+                  AnioCard(skin: skin),
 
                   const SizedBox(height: 32),
 

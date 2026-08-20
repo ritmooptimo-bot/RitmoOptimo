@@ -288,6 +288,16 @@ class ApiClient {
     return (r.data as Map<String, dynamic>);
   }
 
+  // ── TU AÑO ───────────────────────────────────────────────────
+  //
+  // Los MISMOS hechos que ve el entrenador, contados a él: los números salen
+  // de un solo sitio en el servidor y solo cambia la voz. El día que le
+  // enseñe la pantalla a su entrenador tienen que estar hablando de lo mismo.
+  Future<Map<String, dynamic>> getAnio() async {
+    final r = await _dio.get('/athlete/anio');
+    return (r.data as Map<String, dynamic>);
+  }
+
   // ── TU RELOJ GARMIN ──────────────────────────────────────────
   //
   // Los textos, los pasos y el texto de la autorización NO están escritos en
