@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../providers/skin_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../config/skins/skin_config.dart';
+import '../../config/router.dart';
+import 'garmin_screen.dart';
 
 // ── Profile Screen ───────────────────────────────────────────────
 // Perfil del atleta + selector de skin + configuración.
@@ -29,6 +32,17 @@ class ProfileScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          // ── Su reloj ─────────────────────────────────────
+          //
+          // Va lo primero a propósito: es lo único de esta pantalla que
+          // cambia cómo entrena. El color de la app puede esperar.
+          Text('Tu reloj', style: TextStyle(
+              color: skin.textMuted, fontSize: 12, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          _TarjetaGarmin(skin: skin),
+
+          const SizedBox(height: 28),
+
           // ── Skin selector ────────────────────────────────
           Text('Diseño de la app', style: TextStyle(
               color: skin.textMuted, fontSize: 12, fontWeight: FontWeight.w600)),
@@ -80,6 +94,78 @@ class ProfileScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── LA TARJETA DEL RELOJ ─────────────────────────────────────────────
+//
+// Enseña el estado sin tener que entrar: conectado y con cuántas noches, o
+// la invitación a conectarlo. Un simple "Reloj Garmin >" obligaría a entrar
+// solo para ver si sigue funcionando.
+class _TarjetaGarmin extends ConsumerWidget {
+  final SkinConfig skin;
+  const _TarjetaGarmin({required this.skin});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final estado = ref.watch(garminEstadoProvider);
+
+    // Mientras carga o si falla NO se dice "sin conectar": sería mentir con
+    // cara de dato. Se deja el titular y ya.
+    final e = estado.valueOrNull;
+    final vinculado = e?['vinculado'] == true;
+    final noches = (e?['noches'] as num?)?.toInt() ?? 0;
+    final corta = e?['historiaCorta'] == true;
+
+    final String detalle;
+    if (e == null) {
+      detalle = 'Sueño, HRV y pulso en reposo, medidos toda la noche';
+    } else if (!vinculado) {
+      detalle = 'Conéctalo y el plan se ajusta a cómo descansas de verdad';
+    } else if (corta) {
+      detalle = 'Conectado · te falta tu historia';
+    } else {
+      detalle = 'Conectado · $noches ${noches == 1 ? 'noche' : 'noches'}';
+    }
+
+    final color = e == null
+        ? skin.textMuted
+        : (!vinculado ? skin.accent : (corta ? skin.warning : skin.success));
+
+    return GestureDetector(
+      onTap: () => context.push(AppRoutes.garmin),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: skin.backgroundCard,
+          borderRadius: BorderRadius.circular(skin.cardRadius),
+          border: Border.all(color: color.withValues(alpha: 0.45)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.watch_outlined, color: color, size: 24),
+            const SizedBox(width: 14),
+            // ⚠️ Expanded: con la letra al 180 % un texto que no puede
+            // encoger se recorta sin avisar de nada.
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Reloj Garmin',
+                      style: TextStyle(color: skin.textPrimary,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(detalle,
+                      style: TextStyle(color: skin.textMuted, fontSize: 12,
+                          height: 1.35)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: skin.textMuted, size: 22),
+          ],
+        ),
       ),
     );
   }

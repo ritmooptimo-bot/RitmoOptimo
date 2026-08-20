@@ -9,6 +9,7 @@ import '../screens/session/session_complete_screen.dart';
 import '../screens/plan/week_plan_screen.dart';
 import '../screens/wellness/wellness_screen.dart';
 import '../screens/profile/profile_screen.dart';
+import '../screens/profile/garmin_screen.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/auth/pairing_screen.dart';
 import '../screens/session/ble_scan_screen.dart';
@@ -32,6 +33,7 @@ abstract class AppRoutes {
   static const bleScan          = '/ble-scan/:sessionId';
   static const chat             = '/chat';
   static const freeSession      = '/free-session';   // entrenamiento fuera del plan
+  static const garmin           = '/garmin';         // enlazar el reloj del deportista
 }
 
 // ── Router ────────────────────────────────────────────────────────
@@ -132,6 +134,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.freeSession,
         parentNavigatorKey: _rootNavigatorKey,
         builder: (_, __) => const FreeSessionScreen(),
+      ),
+
+      // ── Su reloj Garmin (full screen) ────────────────────────
+      //
+      // Fuera del shell a propósito: es una pantalla de configuración con
+      // formulario y textos largos, y la barra de abajo solo quita sitio.
+      GoRoute(
+        path: AppRoutes.garmin,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (_, __) => const GarminScreen(),
       ),
 
       // ── Chat con el equipo (full screen) ─────────────────────

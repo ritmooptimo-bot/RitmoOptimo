@@ -288,6 +288,43 @@ class ApiClient {
     return (r.data as Map<String, dynamic>);
   }
 
+  // ── TU RELOJ GARMIN ──────────────────────────────────────────
+  //
+  // Los textos, los pasos y el texto de la autorización NO están escritos en
+  // la pantalla: los manda el servidor. La app es un APK, y corregir una
+  // palabra en una instrucción costaría recompilar e instalar en el móvil de
+  // cada deportista. intervals.icu puede mover un botón cualquier martes.
+  Future<Map<String, dynamic>> getGarmin() async {
+    final r = await _dio.get('/athlete/garmin');
+    return (r.data as Map<String, dynamic>);
+  }
+
+  Future<Map<String, dynamic>> conectarGarmin({
+    required String cuenta,
+    required String apiKey,
+    required bool autorizo,
+  }) async {
+    final r = await _dio.post('/athlete/garmin', data: {
+      'cuenta': cuenta, 'api_key': apiKey, 'autorizo': autorizo,
+    });
+    return (r.data as Map<String, dynamic>);
+  }
+
+  /// El botón "busca mi historial ahora". El barrido lo haría solo en 24 h,
+  /// pero quien acaba de pedir sus datos antiguos quiere verlos YA.
+  Future<Map<String, dynamic>> traerHistorialGarmin() async {
+    final r = await _dio.post('/athlete/garmin/historial');
+    return (r.data as Map<String, dynamic>);
+  }
+
+  /// `borrarDatos` no tiene valor por defecto a propósito: borrar los datos de
+  /// salud de alguien no puede decidirlo un descuido. La pantalla pregunta.
+  Future<Map<String, dynamic>> desconectarGarmin({required bool borrarDatos}) async {
+    final r = await _dio.delete('/athlete/garmin',
+        data: {'borrar_datos': borrarDatos});
+    return (r.data as Map<String, dynamic>);
+  }
+
   // ── Week Plan (P0) ───────────────────────────────────────────
   Future<Map<String, dynamic>> getWeekPlan() async {
     final r = await _dio.get('/athlete/week',
