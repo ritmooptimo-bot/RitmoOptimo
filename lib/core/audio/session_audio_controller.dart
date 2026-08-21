@@ -277,6 +277,9 @@ class SessionAudioController {
 
   // Aviso por kilómetro: "Kilómetro 3. Ritmo 5:42..." (petición del usuario)
   int _lastKmAnnounced   = 0;
+  // La última FC recibida y cuándo. Ver el comentario de `onTick`.
+  int? _hrUltimo;
+  int  _hrUltimoSeg = -9999;
   int _lastKmElapsedSec  = 0;
   // Segundo en que arrancó de verdad (tras la cuenta atrás): la media se mide
   // desde ahí, no desde que se pulsó "empezar".
@@ -339,6 +342,15 @@ class SessionAudioController {
     // El medidor se alimenta SIEMPRE, aunque el controlador esté ocupado
     // hablando: si se saltara los ticks de los cues, el bloque perdería metros.
     _ultimaDistanciaM = distanceM;
+
+    // ⚠️ Y LA ÚLTIMA LECTURA DE PULSO, CON EL SEGUNDO EN QUE LLEGÓ.
+    //
+    // El segundo no sobra: una FC congelada es PEOR que ninguna. Ya pasó —
+    // cuarenta minutos de sesión con el mismo 126 porque la banda se había
+    // soltado y nadie miraba si el dato era de ahora. Sin la marca de tiempo,
+    // el aviso de cada kilómetro repetiría ese número toda la sesión y
+    // parecería que va perfecto.
+    if (hr != null && hr > 0) { _hrUltimo = hr; _hrUltimoSeg = elapsed; }
 
     // El pulso de la repetición en curso. Va aquí y no en el tick de la serie
     // porque el tick solo corre en algunas fases, y una lectura perdida es un
@@ -859,6 +871,30 @@ class SessionAudioController {
     await _audio.stopSession();
   }
 
+  /// Cuántos segundos vale una lectura de pulso antes de dejar de servir.
+  ///
+  /// Con la banda dando dato cada pocos segundos, quince es de sobra. Pasado
+  /// eso se calla: decirle «vas a 126» con un número de hace un minuto es
+  /// mentirle con cara de dato.
+  static const int _fcFrescaSeg = 15;
+
+  /// «Vas a 148, en R1.» — el pulso de AHORA junto a la zona que pide el
+  /// plan, para que en cada kilómetro sepa de un oído si va donde tiene que ir.
+  ///
+  /// ⚠️ Sin lectura fresca, NO SE DICE NADA de pulso. Y la zona sola tampoco:
+  /// ya se la dijimos al empezar el bloque, y repetirla cada kilómetro sin el
+  /// número al lado no añade nada — solo hace la frase más larga.
+  String _fraseFcDelKm(int elapsed) {
+    final hr = _hrUltimo;
+    if (hr == null || elapsed - _hrUltimoSeg > _fcFrescaSeg) return '';
+    final b = currentBlock;
+    final zona = (b?.zoneLabel ?? '').trim();
+    final enZona = zona.isEmpty
+        ? ''
+        : (b?.zone != null ? ', en zona ${b!.zone}' : ', en $zona');
+    return ' Vas a $hr$enZona.';
+  }
+
   // ── Aviso por kilómetro ─────────────────────────────────────────────────
   // En cada km completo: número, ritmo del ÚLTIMO km y tiempo total. Se calla
   // durante pitidos/cuenta atrás/fin para no pisar los cues críticos (ese km
@@ -890,7 +926,7 @@ class SessionAudioController {
 
     await _audio.speak(
       'Kilómetro $km. Último kilómetro en ${_fmtPace(paceSec)}.$frasesMedia '
-      'Tiempo total: ${_fmtSec(elapsed)}.',
+      'Tiempo total: ${_fmtSec(elapsed)}.${_fraseFcDelKm(elapsed)}',
     );
   }
 
