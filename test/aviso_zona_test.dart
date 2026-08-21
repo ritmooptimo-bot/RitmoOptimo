@@ -131,8 +131,33 @@ void main() {
       final a = AvisoZona(objetivo: z2, escala: 'fc');
       expect(a.tick(0, 107).estado, EstadoZona.dentro);
       expect(a.tick(1, 125).estado, EstadoZona.dentro);
-      expect(a.tick(2, 126).estado, EstadoZona.porEncima);
-      expect(a.tick(3, 106).estado, EstadoZona.porDebajo);
+    });
+
+    // ⚠️ Y CINCO PULSACIONES MÁS ALLÁ TAMBIÉN, A PROPÓSITO.
+    //
+    // El borde de una zona no es una pared: entre 125 y 126 no ha pasado nada,
+    // y menos cuando el rango es una ESTIMACIÓN por FC de reserva. Sin margen,
+    // quien corra justo en el límite —lo normal en un bloque de umbral— entra y
+    // sale cada pocos segundos y se come avisos por una pulsación. Cinco por
+    // arriba y cinco por abajo, que es lo que pidió el entrenador.
+    test('con margen de 5: rozar el borde NO es salirse', () {
+      final a = AvisoZona(objetivo: z2, escala: 'fc');   // 107-125
+      for (final bpm in [126, 128, 130]) {
+        expect(a.tick(0, bpm).estado, EstadoZona.dentro,
+            reason: '$bpm está dentro del margen por arriba (125+5)');
+      }
+      for (final bpm in [106, 104, 102]) {
+        expect(a.tick(0, bpm).estado, EstadoZona.dentro,
+            reason: '$bpm está dentro del margen por abajo (107-5)');
+      }
+    });
+
+    test('pasado el margen, SÍ es salirse', () {
+      final a = AvisoZona(objetivo: z2, escala: 'fc');
+      expect(a.tick(0, 131).estado, EstadoZona.porEncima,
+          reason: '125 + 5 = 130; 131 ya se sale');
+      expect(a.tick(1, 101).estado, EstadoZona.porDebajo,
+          reason: '107 - 5 = 102; 101 ya se sale');
     });
 
     test('la última zona no tiene techo: no se puede ir "por encima" de ella', () {

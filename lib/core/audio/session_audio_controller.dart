@@ -120,14 +120,38 @@ class BlockInfo {
     );
   }
 
+  /// ⚠️ ANTES ESTO SE CALLABA LA ZONA. Si el bloque traía ritmo objetivo,
+  /// devolvía el ritmo Y PUNTO; y si no lo traía, decía "en zona N" solo cuando
+  /// la zona era un número de FC. Con un plan entero en la escala R —que es la
+  /// del entrenador— `zonaFcNumero("R2")` devuelve null a propósito, así que la
+  /// frase salía VACÍA: 27 minutos de series sin oír una sola referencia.
+  ///
+  /// Ahora se acumulan las dos cosas, y la zona se dice TAL COMO LA ESCRIBIÓ EL
+  /// ENTRENADOR. Repetir su etiqueta no es traducir nada: R2 es R2.
   String get targetDescription {
+    final partes = <String>[];
+
     if (targetPace != null && targetPace!.isNotEmpty) {
       // El ritmo objetivo llega del plan como "5:30". Tal cual, el motor de voz
       // lo lee como una HORA. Se dice en palabras.
-      return 'a ritmo de ${_paceEnPalabras(targetPace!)} por kilómetro';
+      partes.add('a ritmo de ${_paceEnPalabras(targetPace!)} por kilómetro');
     }
-    if (zone != null) return 'en zona $zone';
-    return '';
+
+    // ⚠️ `zone` solo trae número cuando la etiqueta ES de frecuencia cardiaca
+    // (`zonaFcNumero` devuelve null para R1, R2…). Así que ese null es
+    // justamente la señal de "esto es escala del entrenador".
+    //
+    // Y el orden importa: pedir `zoneEscala == 'fc'` aquí hacía que un bloque
+    // escrito "z1" pero sin declarar la escala dijera «en z1» —que el motor de
+    // voz lee «en zeta uno»— en vez de «en zona 1».
+    final etiqueta = (zoneLabel ?? '').trim();
+    if (zone != null) {
+      partes.add('en zona $zone');
+    } else if (etiqueta.isNotEmpty) {
+      partes.add('en $etiqueta');
+    }
+
+    return partes.join(', ');
   }
 
   /// "5:30" → "5 minutos 30 segundos" · "5:00" → "5 minutos justos"
@@ -274,6 +298,11 @@ class SessionAudioController {
   /// correcto — no se inventa un rango.
   final List<RangoFc>? zonasFc;
 
+  /// Las zonas del ENTRENADOR (R0…R3+) en pulsaciones, estimadas por FC de
+  /// reserva. Es lo que permite decirle algo en un plan escrito entero en R,
+  /// que es como escribe el suyo. null = no se han podido calcular.
+  final List<RangoFc>? zonasEntrenador;
+
   /// Qué pulsaciones son un "R1" PARA ESTE deportista (mig. 092). Manda sobre
   /// el modelo genérico de zonas: la escala del entrenador no se traduce con una
   /// fórmula, se mide en él.
@@ -288,6 +317,7 @@ class SessionAudioController {
     required SalidaDeAudio audio,
     required List<dynamic>   rawBlocks,
     this.zonasFc,
+    this.zonasEntrenador,
     this.equivalencia,
     this.onVibrar,
   })  : _audio = audio,
@@ -334,9 +364,9 @@ class SessionAudioController {
   /// ⚠️ Devuelve null en cuanto la escala NO es de FC. Un bloque `R1` de Raúl es
   /// percepción («sin reloj ni pulsómetro»): darle un rango de pulsaciones sería
   /// inventarse una equivalencia que él no ha establecido.
-  RangoFc? _objetivoDelBloque() {
-    if (_blockIdx < 0 || _blockIdx >= blocks.length) return null;
-    final b = blocks[_blockIdx];
+  RangoFc? _objetivoDelBloque([BlockInfo? cual]) {
+    if (cual == null && (_blockIdx < 0 || _blockIdx >= blocks.length)) return null;
+    final b = cual ?? blocks[_blockIdx];
     if (b.zoneLabel == null || b.zoneEscala == 'desconocida') return null;
 
     // 1) La EQUIVALENCIA de este deportista manda sobre todo: dice qué
@@ -346,12 +376,48 @@ class SessionAudioController {
       (x) => x.nombre.toUpperCase() == b.zoneLabel!.toUpperCase().trim());
     if (eq != null && eq.isNotEmpty) return eq.first;
 
-    // 2) Y si no la hay, solo queda el modelo de zonas cuando el bloque ya
-    //    venía en escala de FC. Una etiqueta de percepción SIN equivalencia no
-    //    se traduce: se calla.
+    // 2) Y si no la hay, LAS ZONAS DEL PROPIO ENTRENADOR en pulsaciones.
+    //
+    // ⚠️ AQUÍ ANTES SE CALLABA, y por un motivo que era bueno: traducir una
+    // etiqueta de percepción con una fórmula genérica sería inventarle una
+    // equivalencia que él no ha establecido. Pero el resultado real fue peor:
+    // este deportista tiene TODO su plan en R1/R2 y no tiene equivalencia
+    // propia, así que corrió 27 minutos de series sin una sola referencia de
+    // pulsaciones y sin que la app pudiera avisarle de nada.
+    //
+    // Estas no salen de una fórmula genérica: salen de las fracciones de FC de
+    // reserva de SUS PROPIAS zonas (R2 = 0,80-0,88 de la reserva), aplicadas a
+    // la máxima y el reposo MEDIDOS de este deportista. Aun así son una
+    // ESTIMACIÓN mientras no haya un test de campo, y por eso viajan marcadas:
+    // la app lo dice en voz alta al anunciar el bloque. Un rango estimado
+    // presentado como una orden sería peor que el silencio; dicho como lo que
+    // es, es mejor.
+    final zr = zonasEntrenador?.where(
+      (x) => x.nombre.toUpperCase() == b.zoneLabel!.toUpperCase().trim());
+    if (zr != null && zr.isNotEmpty) return zr.first;
+
+    // 3) Y en último lugar, el modelo genérico z1-z5, solo si el bloque ya
+    //    venía en escala de FC.
     if (b.zoneEscala != 'fc' || b.zone == null || zonasFc == null) return null;
     final z = zonasFc!.where((x) => x.nombre.startsWith('Z${b.zone}'));
     return z.isEmpty ? null : z.first;
+  }
+
+  /// El rango de pulsaciones del bloque, dicho en voz alta.
+  ///
+  /// ⚠️ SE DICE UNA VEZ, AL EMPEZAR, y con su procedencia si es estimado. Los
+  /// avisos de después van cortos —quien corre con auriculares no retiene una
+  /// frase larga— así que la advertencia de "esto es una aproximación" tiene
+  /// que caber aquí o no cabrá en ningún sitio. Y tiene que estar: un rango
+  /// calculado presentado como su umbral medido es un dato sin procedencia.
+  String _fraseObjetivoFc(BlockInfo b) {
+    final r = _objetivoDelBloque(b);
+    if (r == null) return '';
+    final rango = r.hasta == null
+        ? 'a partir de ${r.desde}'
+        : 'entre ${r.desde} y ${r.hasta}';
+    final coletilla = r.esEstimacion ? ', estimadas' : '';
+    return ' Pulsaciones: $rango$coletilla.';
   }
 
   void _vigilarZona(int elapsed, int? hr) {
@@ -634,7 +700,7 @@ class SessionAudioController {
               : '';
       final rec    = 'Recuperación: ${block.recoverySeconds} segundos.';
       await _audio.speak(
-        'Bloque $n, ${block.label}. $reps $repTgt. $tgtTxt $rec',
+        'Bloque $n, ${block.label}. $reps $repTgt. $tgtTxt${_fraseObjetivoFc(block)} $rec',
       );
       await Future.delayed(const Duration(milliseconds: 1800));
       // ⚠️ ANTES ESTO ARRANCABA EL BLOQUE CON UN DESCANSO
@@ -652,7 +718,7 @@ class SessionAudioController {
       // encima es peor que no decir nada.
       await _startIntervalRep(elapsed, distanceM: _ultimaDistanciaM);
     } else {
-      await _audio.speak('Bloque $n, ${block.label}. $dur$tgtTxt');
+      await _audio.speak('Bloque $n, ${block.label}. $dur$tgtTxt${_fraseObjetivoFc(block)}');
     }
   }
 

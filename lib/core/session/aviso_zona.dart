@@ -56,10 +56,24 @@ class RangoFc {
   /// consagraría el error. Entonces solo se le describe.
   final bool mandaElEntrenador;
 
+  /// ⚠️ ¿ESTE RANGO ESTÁ MEDIDO O CALCULADO?
+  ///
+  /// Las zonas R del entrenador se traducen a pulsaciones por FC de reserva
+  /// (Karvonen) cuando el deportista aún no tiene equivalencia propia. Eso NO
+  /// es su umbral: es una aproximación mientras no haya un test de campo o de
+  /// lactato. Se puede usar para avisar —mejor eso que el silencio de 27
+  /// minutos de series sin una referencia— pero hay que DECIRLO, y se dice una
+  /// vez al anunciar el bloque, no en cada aviso.
+  final bool esEstimacion;
+
   const RangoFc({required this.desde, this.hasta, this.nombre = '',
-                 this.mandaElEntrenador = true});
+                 this.mandaElEntrenador = true, this.esEstimacion = false});
 
   bool contiene(int bpm) => bpm >= desde && (hasta == null || bpm <= hasta!);
+
+  /// Dentro CON MARGEN. Ver `AvisoZona.margenBpm`.
+  bool contieneConMargen(int bpm, int margen) =>
+      bpm >= desde - margen && (hasta == null || bpm <= hasta! + margen);
 
   /// "107-125 ppm" · "160+ ppm"
   String get texto => hasta == null ? '$desde+ ppm' : '$desde-$hasta ppm';
@@ -87,6 +101,17 @@ class AvisoZona {
 
   /// Tope por sesión. Pasado esto, se calla para siempre.
   static const int maximoAvisos = 4;
+
+  /// ⚠️ CUÁNTO SE PUEDE SALIR ANTES DE QUE CUENTE COMO SALIRSE.
+  ///
+  /// El borde de una zona no es una pared: entre 163 y 164 pulsaciones no ha
+  /// pasado nada, y menos cuando el rango es una ESTIMACIÓN por Karvonen. Sin
+  /// este margen, quien corra justo en el límite —que es lo normal en un bloque
+  /// de umbral— entraría y saldría cada pocos segundos y se comería avisos por
+  /// una pulsación.
+  ///
+  /// Cinco por arriba y cinco por abajo, que es lo que pidió el entrenador.
+  static const int margenBpm = 5;
 
   final RangoFc? objetivo;
   final String escala;
@@ -129,7 +154,10 @@ class AvisoZona {
     }
 
     final r = objetivo!;
-    final estado = r.contiene(bpm)
+    // ⚠️ CON MARGEN. Salirse una pulsación no es salirse: el borde de una zona
+    // no es una pared, y menos cuando el rango es una estimación. Ver
+    // `margenBpm`.
+    final estado = r.contieneConMargen(bpm, margenBpm)
         ? EstadoZona.dentro
         : (bpm > (r.hasta ?? bpm) ? EstadoZona.porEncima : EstadoZona.porDebajo);
     _ultimoEstado = estado;

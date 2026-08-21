@@ -81,6 +81,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         audio: _audioCueService,
         rawBlocks: blocks,
         zonasFc: zonas?.zonas,
+        // Y las del ENTRENADOR en pulsaciones: es lo que permite decir algo en
+        // un plan escrito entero en R, que es como escribe el suyo.
+        zonasEntrenador: zonas?.zonasEntrenador,
         equivalencia: equiv,
         onVibrar: () => HapticFeedback.mediumImpact(),
       );

@@ -22,12 +22,24 @@ class ZonasFc {
   final bool esEstimacion;
   final String? explicacion;
 
+  /// ⚠️ LAS ZONAS DEL ENTRENADOR (R0…R3+) EN PULSACIONES.
+  ///
+  /// Sin esto, un plan escrito entero en la escala R —que es como escribe el
+  /// suyo— dejaba a la app MUDA: ni decía la zona ni podía avisar de nada.
+  /// Salen de las fracciones de FC de reserva de sus propias zonas, aplicadas
+  /// a la máxima y el reposo medidos de este deportista. Son una ESTIMACIÓN
+  /// mientras no haya test de campo, y por eso van marcadas.
+  final List<RangoFc> zonasEntrenador;
+  final String? procedenciaEntrenador;
+
   const ZonasFc({
     required this.zonas,
     required this.fcMaxBpm,
     required this.procedencia,
     required this.esEstimacion,
     this.explicacion,
+    this.zonasEntrenador = const [],
+    this.procedenciaEntrenador,
   });
 }
 
@@ -48,8 +60,27 @@ final zonasFcProvider = FutureProvider.autoDispose<ZonasFc?>((ref) async {
       );
     }).toList();
 
+    // Las del entrenador, si el servidor las manda. Se marcan como estimación
+    // porque lo son: la app lo dirá en voz alta al anunciar el bloque.
+    final rawR = j['zonas_entrenador'];
+    final estimadas = j['zonas_entrenador_es_estimacion'] == true;
+    final zonasR = rawR is List
+        ? rawR
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .where((e) => e['from'] != null && e['to'] != null)
+            .map((e) => RangoFc(
+                  desde: (e['from'] as num).toInt(),
+                  hasta: (e['to'] as num).toInt(),
+                  nombre: (e['name'] ?? '').toString(),
+                  esEstimacion: estimadas,
+                ))
+            .toList()
+        : <RangoFc>[];
+
     return ZonasFc(
       zonas: zonas,
+      zonasEntrenador: zonasR,
+      procedenciaEntrenador: j['zonas_entrenador_procedencia']?.toString(),
       fcMaxBpm: (max['bpm'] as num).toInt(),
       procedencia: (max['source'] ?? 'estimada_edad').toString(),
       esEstimacion: max['is_estimate'] == true,
